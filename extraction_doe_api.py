@@ -1099,15 +1099,6 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str) -> dict:
     }
 
 #***************************************************************************
-def processar_diario_unico(url_alvo: str, numero_alvo: str) -> dict:
-    logger.info(f"Iniciando processamento do Decreto {numero_alvo}")
-    logger.info("Baixando o Diário Oficial da URL...")
-
-    arquivo_doe = baixar_doe(url_alvo)
-
-    if not arquivo_doe:
-        logger.error("Falha crítica ao baixar o PDF.")
-        return {"sucesso": False, "mensagem": "Falha ao baixar o PDF."}
 
     match_data = re.search(r"(\d{8})", url_alvo)
     data_diario_formatada = None
@@ -1205,13 +1196,6 @@ def processar_diario_unico(url_alvo: str, numero_alvo: str) -> dict:
         "dados": [pacote_do_decreto]
     }
 #***************************************************************************
-def processar_diario_em_lote(url_alvo: str) -> dict:
-    logger.info("Baixando o Diário Oficial da URL...")
-    arquivo_doe = baixar_doe(url_alvo)
-
-    if not arquivo_doe:
-        logger.error("Falha crítica ao baixar o PDF.")
-        return {"sucesso": False, "mensagem": "Falha ao baixar o PDF."}
 
     match_data = re.search(r"(\d{8})", url_alvo)
     data_diario_formatada = None
@@ -1374,7 +1358,7 @@ def salvar_no_banco(resultado_json: dict):
                 pi_municipios, responsaveis, data_diario, url, original, anexos,
                 arquivo_origem, id_tipo, id_documento, processado, data_criacao
             ) VALUES (
-#                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             ) ON CONFLICT (id_documento) DO NOTHING;
         """
 
@@ -1431,6 +1415,7 @@ def salvar_no_banco(resultado_json: dict):
         print(f"\n❌ Erro na operação de banco de dados:\n{e}")
         if conn:
             conn.rollback()
+        raise
     finally:
         if cursor:
             cursor.close()
@@ -1565,7 +1550,7 @@ def salvar_anexos_no_banco(resultado_json: dict):
             INSERT INTO documento_extraido_anexo (
                 id, id_documento, tipo_anexo, anexo, sequencia_anexo, processado, data_criacao
             ) VALUES (
-#                 %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s
             );
         """
 
@@ -1606,6 +1591,7 @@ def salvar_anexos_no_banco(resultado_json: dict):
         print(f"\n❌ Erro na operação do banco de dados (Tabela de Anexos):\n{e}")
         if conn:
             conn.rollback()
+        raise
     finally:
         if cursor:
             cursor.close()
@@ -1664,84 +1650,356 @@ def buscar_decreto_no_banco(numero_decreto: str) -> dict:
 
 """#03 - Endpoints da API"""
 
-def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str) -> dict:
-    """
-    Função de serviço (Service Layer) para orquestrar a extração de um decreto.
-    Acionada via endpoint, processa o PDF e persiste os dados em silêncio.
-    """
+
+
+#***************************************************************************
+# FUNÇÕES DE STREAMING (SSE)
+#***************************************************************************
+def processar_diario_em_lote(url_alvo: str):
+    yield json.dumps({"status": "log", "mensagem": "Baixando o Diário Oficial da URL..."}) + "\n"
+    logger.info("Baixando o Diário Oficial da URL...")
+    arquivo_doe = baixar_doe(url_alvo)
+
+    if not arquivo_doe:
+        logger.error("Falha crítica ao baixar o PDF.")
+        yield json.dumps({"status": "error", "mensagem": "Falha ao baixar o PDF."}) + "\n"
+        return
+
+    match_data = re.search(r"(\d{8})", url_alvo)
+    data_diario_formatada = None
+    data_id_doc = None
+    if match_data:
+        data_bruta = match_data.group(1)
+        data_diario_formatada = f"{data_bruta[6:]}/{data_bruta[4:6]}/{data_bruta[:4]}"
+        data_id_doc = f"{data_bruta[6:]}{data_bruta[4:6]}{data_bruta[:4]}"
+
+    yield json.dumps({"status": "log", "mensagem": "Lendo o PDF e listando decretos publicados..."}) + "\n"
+    logger.info("Lendo o PDF e listando decretos publicados...")
+    lista_decretos = listar_decretos_doe(arquivo_doe)
+    total_decretos = len(lista_decretos)
+
+    if total_decretos == 0:
+        logger.warning("Nenhum decreto encontrado neste Diário Oficial. Abortando extração.")
+        yield json.dumps({"status": "done", "resultados": {
+            "sucesso": True,
+            "total_decretos": 0,
+            "dados": []
+        }}) + "\n"
+        return
+
+    yield json.dumps({"status": "log", "mensagem": f"Encontrado(s) {total_decretos} decreto(s)! Iniciando processamento em lote..."}) + "\n"
+    logger.info(f"Encontrado(s) {total_decretos} decreto(s)! Iniciando processamento em lote...")
+
+    resultados_finais = []
+
+    for index, item in enumerate(lista_decretos, start=1):
+        assinatura = item["decreto"]
+        pagina_doe = item["pagina"]
+
+        match_numero = re.search(r"N[°ºoO\.]*\s*([\d\.]+)", assinatura, re.IGNORECASE)
+
+        if not match_numero:
+            continue
+
+        num_decreto = match_numero.group(1).strip()
+
+        yield json.dumps({"status": "log", "mensagem": f"⏳ [{index}/{total_decretos}] Processando Decreto Nº {num_decreto}..."}) + "\n"
+        logger.info(f"⏳ [{index}/{total_decretos}] Processando Decreto Nº {num_decreto}...")
+
+        texto_bruto = extrair_texto_bruto_decreto(arquivo_doe, num_decreto)
+
+        if not texto_bruto["sucesso"]:
+            yield json.dumps({"status": "log", "mensagem": f"Falha ao extrair texto bruto do Decreto {num_decreto}. Pulando..."}) + "\n"
+            logger.warning(f"Falha ao extrair texto bruto do Decreto {num_decreto}. Pulando para o próximo...")
+            continue
+
+        links_imagens = []
+        if texto_bruto.get("tem_figuras"):
+            yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Verificando e enviando imagens para o MinIO..."}) + "\n"
+            logger.info(f"[{num_decreto}] Verificando e enviando imagens para o MinIO...")
+            links_imagens = enviar_imagens_minio(num_decreto, texto_bruto["xrefs_figuras"])
+
+        is_pagina_um = verificar_decreto_primeira_pagina(arquivo_doe, num_decreto)
+
+        yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Limpando sujeiras e separando anexos..."}) + "\n"
+        logger.info(f"[{num_decreto}] Limpando sujeiras e separando anexos...")
+
+        if is_pagina_um:
+            texto_limpo = limpar_texto_pagina_um(texto_bruto["texto"])
+        else:
+            texto_limpo = limpar_texto_demais_paginas(texto_bruto["texto"])
+
+        decreto_principal, anexos = separar_decreto_dos_anexos(texto_limpo)
+
+        yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] 🤖 [IA] Analisando tabelas do corpo principal..."}) + "\n"
+        logger.info(f"[{num_decreto}] 🤖 [IA] Analisando tabelas do corpo principal...")
+        decreto_principal_formatado = processar_texto_com_llm("Corpo do Decreto", decreto_principal, nome_modelo_escolhido, limite_chars=40000)
+
+        yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] 🤖 [IA] Analisando tabelas dos anexos..."}) + "\n"
+        logger.info(f"[{num_decreto}] 🤖 [IA] Analisando tabelas dos anexos...")
+        anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=40000)
+
+        yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] 🧠 [IA] Extraindo metadados inteligentes..."}) + "\n"
+        logger.info(f"[{num_decreto}] 🧠 [IA] Extraindo metadados inteligentes...")
+        metadados_llm = extrair_metadados_com_llm(decreto_principal, nome_modelo_escolhido)
+
+        url_direta = f"{url_alvo}#page={pagina_doe}"
+        timestamp_atual = str(datetime.now())
+        numero_sem_ponto = str(num_decreto).replace(".", "")
+
+        metadados_completos = {
+            "id_nome_decreto": metadados_llm.get("id", f"DECRETO Nº {num_decreto}"),
+            "nup": metadados_llm.get("nup", []),
+            "viproc": None,
+            "pagina": str(pagina_doe),
+            "orgao_entidade_esfera": "PODER EXECUTIVO",
+            "pi_entes_programas": metadados_llm.get("pi_entes_programas", []),
+            "pi_pessoas_fisicas": metadados_llm.get("pi_pessoas_fisicas", []),
+            "pi_pessoas_juridicas": metadados_llm.get("pi_pessoas_juridicas", []),
+            "pi_municipios": metadados_llm.get("pi_municipios", []),
+            "responsaveis": metadados_llm.get("responsaveis", []),
+            "data_diario": data_diario_formatada,
+            "url": url_direta,
+            "arquivo_origem": url_alvo,
+            "id_tipo": 1,
+            "id_documento": f"1_{numero_sem_ponto}_{data_id_doc}",
+            "processado": False,
+            "data_criacao": timestamp_atual,
+            "links_imagens": links_imagens
+        }
+
+        resultados_finais.append({
+            "metadados": metadados_completos,
+            "textos": {
+                "original": decreto_principal_formatado,
+                "anexos": anexos_formatados
+            }
+        })
+
+        yield json.dumps({"status": "log", "mensagem": f"✅ Decreto {num_decreto} finalizado com sucesso!"}) + "\n"
+        logger.info(f"✅ Decreto {num_decreto} finalizado com sucesso!")
+
+    msg_final = f"🎉 Processamento em lote concluído! {len(resultados_finais)} de {total_decretos} decretos extraídos com sucesso."
+    yield json.dumps({"status": "log", "mensagem": msg_final}) + "\n"
+    logger.info(msg_final)
+
+    yield json.dumps({"status": "done", "resultados": {
+        "sucesso": True,
+        "total_decretos": len(resultados_finais),
+        "dados": resultados_finais
+    }}) + "\n"
+
+
+def executar_esteira_publicacao_doe(url_do_diario: str):
+    yield json.dumps({"status": "log", "mensagem": f"🚀 INICIANDO ESTEIRA EM LOTE: {url_do_diario}"}) + "\n"
+    logger.info("================================================================")
+    logger.info(f"🚀 INICIANDO ESTEIRA EM LOTE: {url_do_diario}")
+    logger.info("================================================================")
+
+    resultado_final = None
+
+    for evento in processar_diario_em_lote(url_do_diario):
+        try:
+            evento_dict = json.loads(evento.strip())
+            if evento_dict.get("status") == "done":
+                resultado_final = evento_dict.get("resultados")
+            else:
+                yield evento
+        except Exception:
+            yield evento
+
+    if resultado_final and resultado_final.get("sucesso"):
+        if resultado_final.get("total_decretos") == 0:
+            yield json.dumps({"status": "log", "mensagem": "🛑 Fluxo interrompido limpo: Não há dados para processar."}) + "\n"
+            logger.info("🛑 Fluxo interrompido limpo: Não há dados para processar ou salvar no banco.")
+            yield json.dumps({"status": "done", "resultado": resultado_final}) + "\n"
+            return
+
+        yield json.dumps({"status": "log", "mensagem": f"✅ Extração de IA concluída! Total de decretos: {resultado_final.get('total_decretos')}"}) + "\n"
+        logger.info(f"✅ Extração de IA concluída! Total de decretos: {resultado_final.get('total_decretos')}")
+
+        yield json.dumps({"status": "log", "mensagem": "💾 Iniciando gravação em lote no PostgreSQL..."}) + "\n"
+        logger.info("💾 Iniciando gravação em lote no PostgreSQL (Desenvolvimento)...")
+
+        try:
+            salvar_no_banco(resultado_final)
+            salvar_anexos_no_banco(resultado_final)
+            
+            yield json.dumps({"status": "log", "mensagem": "✅ Todos os dados e anexos gravados no banco com sucesso!"}) + "\n"
+            logger.info("✅ Todos os dados e anexos foram gravados no banco com sucesso!")
+            
+            yield json.dumps({"status": "done", "resultado": resultado_final}) + "\n"
+
+        except Exception as e:
+            msg_erro = f"❌ Lote extraído, mas falhou ao salvar no banco: {e}"
+            yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
+            logger.error(msg_erro)
+    else:
+        msg_erro = f"❌ A esteira em lote falhou: {resultado_final.get('mensagem') if resultado_final else 'Erro desconhecido'}"
+        yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
+        logger.error(msg_erro)
+
+def processar_diario_unico(url_alvo: str, numero_alvo: str):
+    yield json.dumps({"status": "log", "mensagem": f"Iniciando processamento do Decreto {numero_alvo}"}) + "\n"
+    logger.info(f"Iniciando processamento do Decreto {numero_alvo}")
+    
+    yield json.dumps({"status": "log", "mensagem": "Baixando o Diário Oficial da URL..."}) + "\n"
+    logger.info("Baixando o Diário Oficial da URL...")
+
+    arquivo_doe = baixar_doe(url_alvo)
+
+    if not arquivo_doe:
+        logger.error("Falha crítica ao baixar o PDF.")
+        yield json.dumps({"status": "error", "mensagem": "Falha ao baixar o PDF."}) + "\n"
+        return
+
+    match_data = re.search(r"(\d{8})", url_alvo)
+    data_diario_formatada = None
+    data_id_doc = None
+    if match_data:
+        data_bruta = match_data.group(1)
+        data_diario_formatada = f"{data_bruta[6:]}/{data_bruta[4:6]}/{data_bruta[:4]}"
+        data_id_doc = f"{data_bruta[6:]}{data_bruta[4:6]}{data_bruta[:4]}"
+
+    yield json.dumps({"status": "log", "mensagem": "Procurando a página exata do decreto..."}) + "\n"
+    logger.info("Procurando a página exata do decreto...")
+    lista_decretos = listar_decretos_doe(arquivo_doe)
+    pagina_doe = None
+    numero_limpo_alvo = str(numero_alvo).replace(".", "")
+
+    for item in lista_decretos:
+        assinatura = item["decreto"]
+        match_numero = re.search(r"N[°ºoO\.]*\s*([\d\.]+)", assinatura, re.IGNORECASE)
+        if match_numero:
+            num_encontrado = match_numero.group(1).strip().replace(".", "")
+            if num_encontrado == numero_limpo_alvo:
+                pagina_doe = item["pagina"]
+                break
+
+    if not pagina_doe:
+        msg = f"Decreto Nº {numero_alvo} não encontrado na URL fornecida."
+        logger.warning(msg)
+        yield json.dumps({"status": "error", "mensagem": msg}) + "\n"
+        return
+
+    yield json.dumps({"status": "log", "mensagem": f"Iniciando extração (Encontrado na Página {pagina_doe})..."}) + "\n"
+    logger.info(f"Iniciando extração (Encontrado na Página {pagina_doe})...")
+    texto_bruto = extrair_texto_bruto_decreto(arquivo_doe, numero_alvo)
+
+    if not texto_bruto["sucesso"]:
+        logger.error("Falha ao extrair texto bruto.")
+        yield json.dumps({"status": "error", "mensagem": "Falha na extração de texto."}) + "\n"
+        return
+
+    yield json.dumps({"status": "log", "mensagem": "Verificando imagens no MinIO..."}) + "\n"
+    logger.info("Verificando imagens no MinIO...")
+    links_imagens = []
+    if texto_bruto.get("tem_figuras"):
+        links_imagens = enviar_imagens_minio(numero_alvo, texto_bruto["xrefs_figuras"])
+
+    is_pagina_um = verificar_decreto_primeira_pagina(arquivo_doe, numero_alvo)
+
+    yield json.dumps({"status": "log", "mensagem": "Limpando sujeiras e separando anexos..."}) + "\n"
+    logger.info("Limpando sujeiras e separando anexos...")
+    if is_pagina_um:
+        texto_limpo = limpar_texto_pagina_um(texto_bruto["texto"])
+    else:
+        texto_limpo = limpar_texto_demais_paginas(texto_bruto["texto"])
+
+    decreto_principal, anexos = separar_decreto_dos_anexos(texto_limpo)
+
+    yield json.dumps({"status": "log", "mensagem": "[IA] Analisando tabelas do corpo principal e anexos..."}) + "\n"
+    logger.info("[IA] Analisando tabelas do corpo principal e anexos...")
+    decreto_principal_formatado = processar_texto_com_llm("Corpo do Decreto", decreto_principal, nome_modelo_escolhido, limite_chars=40000)
+    anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=40000)
+
+    yield json.dumps({"status": "log", "mensagem": "[IA] Extraindo metadados inteligentes..."}) + "\n"
+    logger.info("[IA] Extraindo metadados inteligentes...")
+    metadados_llm = extrair_metadados_com_llm(decreto_principal, nome_modelo_escolhido)
+
+    url_direta = f"{url_alvo}#page={pagina_doe}"
+    timestamp_atual = str(datetime.now())
+    numero_sem_ponto = str(numero_alvo).replace(".", "")
+
+    metadados_completos = {
+        "id_nome_decreto": metadados_llm.get("id", f"DECRETO Nº {numero_alvo}"),
+        "nup": metadados_llm.get("nup", []),
+        "viproc": None,
+        "pagina": str(pagina_doe),
+        "orgao_entidade_esfera": "PODER EXECUTIVO",
+        "pi_entes_programas": metadados_llm.get("pi_entes_programas", []),
+        "pi_pessoas_fisicas": metadados_llm.get("pi_pessoas_fisicas", []),
+        "pi_pessoas_juridicas": metadados_llm.get("pi_pessoas_juridicas", []),
+        "pi_municipios": metadados_llm.get("pi_municipios", []),
+        "responsaveis": metadados_llm.get("responsaveis", []),
+        "data_diario": data_diario_formatada,
+        "url": url_direta,
+        "arquivo_origem": url_alvo,
+        "id_tipo": 1,
+        "id_documento": f"1_{numero_sem_ponto}_{data_id_doc}",
+        "processado": False,
+        "data_criacao": timestamp_atual,
+        "links_imagens": links_imagens
+    }
+
+    pacote_do_decreto = {
+        "metadados": metadados_completos,
+        "textos": {
+            "original": decreto_principal_formatado,
+            "anexos": anexos_formatados
+        }
+    }
+
+    yield json.dumps({"status": "log", "mensagem": f"Decreto {numero_alvo} finalizado com sucesso!"}) + "\n"
+    logger.info(f"Decreto {numero_alvo} finalizado com sucesso!")
+
+    yield json.dumps({"status": "done", "resultados": {
+        "sucesso": True,
+        "total_decretos": 1,
+        "dados": [pacote_do_decreto]
+    }}) + "\n"
+
+
+def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str):
+    yield json.dumps({"status": "log", "mensagem": f"🚀 INICIANDO ESTEIRA PARA O DECRETO: {numero_do_decreto}"}) + "\n"
     logger.info("================================================================")
     logger.info(f"🚀 INICIANDO ESTEIRA PARA O DECRETO: {numero_do_decreto}")
     logger.info(f"🔗 URL: {url_do_diario}")
     logger.info("================================================================")
 
-    # 1. Chama a função principal de processamento
-    resultado_final = processar_diario_unico(url_do_diario, numero_do_decreto)
+    resultado_final = None
 
-    if resultado_final.get("sucesso"):
+    for evento in processar_diario_unico(url_do_diario, numero_do_decreto):
+        try:
+            evento_dict = json.loads(evento.strip())
+            if evento_dict.get("status") == "done":
+                resultado_final = evento_dict.get("resultados")
+            else:
+                yield evento
+        except Exception:
+            yield evento
+
+    if resultado_final and resultado_final.get("sucesso"):
+        yield json.dumps({"status": "log", "mensagem": "✅ Extração da IA concluída com sucesso!"}) + "\n"
         logger.info("✅ Extração da IA concluída com sucesso!")
 
-        # --- 2. PERSISTÊNCIA NO BANCO ---
+        yield json.dumps({"status": "log", "mensagem": "💾 Iniciando gravação no PostgreSQL..."}) + "\n"
         logger.info("💾 Iniciando gravação no PostgreSQL (Desenvolvimento)...")
 
         try:
-            # Salva os dados textuais e os anexos (imagens) nas tabelas correspondentes
             salvar_no_banco(resultado_final)
             salvar_anexos_no_banco(resultado_final)
-
+            
+            yield json.dumps({"status": "log", "mensagem": "✅ Dados salvos com sucesso no banco de dados!"}) + "\n"
             logger.info("✅ Dados salvos com sucesso no banco de dados!")
+            
+            yield json.dumps({"status": "done", "resultado": resultado_final}) + "\n"
 
         except Exception as e:
-            logger.error(f"❌ Erro crítico ao salvar no banco: {e}")
-            # Em APIs, se o banco falhar, é crucial informar quem fez a requisição
-            return {"sucesso": False, "mensagem": f"Decreto extraído, mas falhou ao salvar no banco: {e}"}
-
+            msg_erro = f"❌ Decreto extraído, mas falhou ao salvar no banco: {e}"
+            yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
+            logger.error(msg_erro)
     else:
-        logger.error(f"❌ A esteira falhou: {resultado_final.get('mensagem')}")
-
-    # 3. Retorna o pacote de dados (ou de erro) para o endpoint
-    return resultado_final
-
-def executar_esteira_publicacao_doe(url_do_diario: str) -> dict:
-    """
-    Orquestra o processamento completo de um Diário Oficial em lote.
-    Acionada via endpoint, processa o PDF e persiste os dados em silêncio.
-    """
-    logger.info("================================================================")
-    logger.info(f"🚀 INICIANDO ESTEIRA EM LOTE: {url_do_diario}")
-    logger.info("================================================================")
-
-    # 1. Aciona o motor de processamento
-    resultado_final = processar_diario_em_lote(url_do_diario)
-
-    if resultado_final.get("sucesso"):
-
-        # 👇 TRAVA DE ENCERRAMENTO (EARLY RETURN) 👇
-        if resultado_final.get("total_decretos") == 0:
-            logger.info("🛑 Fluxo interrompido limpo: Não há dados para processar ou salvar no banco.")
-            return resultado_final
-        # 👆 ====================================== 👆
-
-        logger.info(f"✅ Extração de IA concluída! Total de decretos: {resultado_final.get('total_decretos')}")
-
-        # --- 2. INSERÇÃO NO BANCO DE DADOS (COM TRY/EXCEPT) ---
-        logger.info("💾 Iniciando gravação em lote no PostgreSQL (Desenvolvimento)...")
-
-        try:
-            # 1º - Salva os dados textuais de TODOS os decretos na tabela pai
-            salvar_no_banco(resultado_final)
-
-            # 2º - Salva as imagens vinculadas a TODOS os decretos na tabela filha
-            salvar_anexos_no_banco(resultado_final)
-
-            logger.info("✅ Todos os dados e anexos foram gravados no banco com sucesso!")
-
-        except Exception as e:
-            logger.error(f"❌ Erro crítico ao gravar o lote no banco de dados: {e}")
-            # Em APIs, informamos que houve falha na etapa de banco
-            return {"sucesso": False, "mensagem": f"Lote extraído, mas falhou ao salvar no banco: {e}"}
-
-    else:
-        logger.error(f"❌ A esteira em lote falhou: {resultado_final.get('mensagem')}")
-
-    # 3. Retorna o pacote de dados para o endpoint (FastAPI)
-    return resultado_final
+        msg_erro = f"❌ A esteira falhou: {resultado_final.get('mensagem') if resultado_final else 'Erro desconhecido'}"
+        yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
+        logger.error(msg_erro)

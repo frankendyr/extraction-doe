@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream de Logs - Extração DOE</title>
+    <style>
+        body {
+            font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            height: 100%;
+        }
+        h1 {
+            font-size: 1.5rem;
+            color: #38bdf8;
+            margin: 0;
+        }
+        .form-group {
+            display: flex;
+            gap: 10px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            background-color: #1e293b;
+            color: white;
+            font-size: 1rem;
+            outline: none;
+        }
+        input[type="text"]:focus {
+            border-color: #38bdf8;
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            background-color: #0ea5e9;
+            color: white;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #0284c7;
+        }
+        button:disabled {
+            background-color: #475569;
+            cursor: not-allowed;
+        }
+        .terminal {
+            flex: 1;
+            background-color: #000000;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+            font-size: 0.9rem;
+            overflow-y: auto;
+            color: #10b981;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+        .log-error { color: #ef4444; }
+        .log-info { color: #38bdf8; }
+        .log-success { color: #10b981; }
+        .log-raw { color: #94a3b8; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Monitoramento em Tempo Real (Lote)</h1>
+        
+        <div class="form-group">
+            <input type="text" id="urlInput" placeholder="Insira a URL do Diário Oficial..." value="https://exemplo.com/diario.pdf">
+            <button id="btnStart" onclick="iniciarStream()">Iniciar Processamento</button>
+        </div>
+
+        <div class="terminal" id="terminalWindow">
+            <span class="log-raw">Aguardando inicialização da esteira...</span><br>
+        </div>
+    </div>
+
+    <script>
+        async function iniciarStream() {
+            const urlDoDiario = document.getElementById('urlInput').value;
+            const terminal = document.getElementById('terminalWindow');
+            const btn = document.getElementById('btnStart');
+
+            if (!urlDoDiario) {
+                alert("Por favor, insira a URL do diário.");
+                return;
+            }
+
+            // Reset UI
+            terminal.innerHTML = '<span class="log-info">> Conectando à API de Extração...</span><br>';
+            btn.disabled = true;
+            btn.innerText = "Processando...";
+
+            try {
+                // Como nosso endpoint é POST, usamos fetch com body e consumimos o ReadableStream da resposta
+                const response = await fetch('http://127.0.0.1:8000/decretos-lote-doe', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream'
+                    },
+                    body: JSON.stringify({
+                        url_do_diario: urlDoDiario
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Erro na API: ${response.status} ${response.statusText}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        
+                        try {
+                            const data = JSON.parse(line);
+                            let cssClass = "log-raw";
+                            let prefix = ">";
+
+                            if (data.status === "log") {
+                                cssClass = "log-info";
+                                prefix = "[LOG]";
+                            } else if (data.status === "error") {
+                                cssClass = "log-error";
+                                prefix = "[ERRO]";
+                            } else if (data.status === "done") {
+                                cssClass = "log-success";
+                                prefix = "[SUCESSO]";
+                            }
+
+                            // Mensagem principal
+                            const mensagem = data.mensagem || (data.status === "done" ? "Processamento finalizado. Verifique o banco de dados." : JSON.stringify(data));
+                            
+                            terminal.innerHTML += `<span class="${cssClass}">${prefix} ${mensagem}</span><br>`;
+                            
+                        } catch (e) {
+                            // Se não for JSON (caso venha quebrado), exibe como texto bruto
+                            terminal.innerHTML += `<span class="log-raw">${line}</span><br>`;
+                        }
+                        
+                        // Scroll automático para o fim
+                        terminal.scrollTop = terminal.scrollHeight;
+                    }
+                }
+            } catch (error) {
+                terminal.innerHTML += `<span class="log-error">[FALHA CRÍTICA] ${error.message}</span><br>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Iniciar Processamento";
+            }
+        }
+    </script>
+</body>
+</html>
