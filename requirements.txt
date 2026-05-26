@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+pydantic
+PyMuPDF
+boto3
+psycopg2-binary
+requests
+urllib3
+google-generativeai
+python-dotenv

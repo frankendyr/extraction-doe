@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Variáveis de Ambiente (CRÍTICO: Nunca envie o .env para o GitHub!)
+.env
+
+# Ambientes Virtuais
+venv/
+.venv/
+env/
+
+# Arquivos gerados pelo projeto
+imagens_decretos/
+*.pdf
+
+# Sistema Operacional / IDE
+.DS_Store
+.vscode/
+.idea/
