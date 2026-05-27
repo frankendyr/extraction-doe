@@ -1,0 +1,9 @@
+services:
+  api_extraction_service:
+    build: .
+    container_name: api_extraction_service
+    restart: always
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
