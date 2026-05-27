@@ -18,7 +18,6 @@ http://127.0.0.1:8001/docs
 ├── venv
 ├── .env
 ├── .gitignore
-├── extraction_doe_api.py
 ├── leitor_de_logs.html
 ├── main.py
 ├── README.md
