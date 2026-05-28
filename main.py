@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from business.esteira import executar_esteira_decreto_unico, executar_esteira_publicacao_doe, baixar_doe, listar_decretos_doe
+from business.varredura_business import orquestrar_varredura, montar_url_por_data
 
 app = FastAPI(
     title="API_EXTRACTION_SERVICE",
@@ -28,8 +29,12 @@ class DecretoUnicoRequest(BaseModel):
 class DiarioLoteRequest(BaseModel):
     url_do_diario: str
 
+class VarreduraRequest(BaseModel):
+    data_inicio: str
+    data_fim: str
 
-@app.post("/decreto-unico", summary="Executa o processamento de um decreto único com logs em tempo real (SSE)")
+
+@app.post("/extrair-decreto-unico", summary="Executa a extração do texto de um único decreto com logs em tempo real (SSE)")
 def executar_decreto_unico(req: DecretoUnicoRequest):
     """
     Aciona a extração de um único decreto e persiste no banco de dados.
@@ -39,7 +44,29 @@ def executar_decreto_unico(req: DecretoUnicoRequest):
     return StreamingResponse(gerador, media_type="text/event-stream")
 
 
-@app.post("/decretos-lote-doe", summary="Executar esteira de processamento em lote de decretos de uma publicação do DOE com logs em tempo real (SSE)")
+@app.post("/listar-urls-decretos-por-periodo", summary="Varredura de URLs de Diários Oficiais que possuem publicações de decretos dentro de um intervalor pré-definido passado como parâmetro")
+def varredura_urls(req: VarreduraRequest):
+    """
+    Gera URLs para o período informado, verifica quais PDFs existem, 
+    e filtra quais deles contêm decretos.
+    Retorna a lista de URLs prontas para extração.
+    """
+    resultado = orquestrar_varredura(req.data_inicio, req.data_fim)
+    if not resultado.get("sucesso"):
+        raise HTTPException(status_code=400, detail=resultado)
+    return resultado
+
+@app.get("/montar-url", summary="Montar a URL do Diário Oficial a partir de uma data")
+def montar_url(data: str):
+    """
+    Recebe uma data via Query Params (ex: ?data=06/03/2026) e retorna a URL padronizada do Diário Oficial.
+    """
+    resultado = montar_url_por_data(data)
+    if not resultado.get("sucesso"):
+        raise HTTPException(status_code=400, detail=resultado)
+    return resultado
+
+@app.post("/extrair-decretos-doe-lote", summary="Executar esteira de extração em lote de decretos de uma publicação do DOE com logs em tempo real (SSE)")
 def executar_diario_lote(req: DiarioLoteRequest):
     """
     Orquestra o processamento completo de um Diário Oficial em lote.

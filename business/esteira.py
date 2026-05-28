@@ -8,6 +8,7 @@ import requests
 import urllib3
 from dotenv import load_dotenv
 from business.minio_business import enviar_imagens_minio
+from doe.esteira_doe import salvar_no_banco, salvar_anexos_no_banco
 import google.generativeai as genai
 import logging
 
