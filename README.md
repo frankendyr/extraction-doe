@@ -8,9 +8,9 @@ Esta API foi construída para automatizar a varredura, download e extração de 
 # Iniciar o servidor FastAPI
 fastapi dev main.py
 # Ou via Uvicorn na porta 8000:
-uvicorn main:app --host 127.0.0.1 --port 8000
+uvicorn main:app --host 127.0.0.1 --port 8001
 ```
-**Acessar Documentação (Swagger):** http://127.0.0.1:8000/docs
+**Acessar Documentação (Swagger):** http://127.0.0.1:8001/docs
 
 ---
 
