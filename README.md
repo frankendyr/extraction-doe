@@ -14,40 +14,43 @@ uvicorn main:app --host 127.0.0.1 --port 8001
 
 ---
 
-## 📡 Endpoints Disponíveis
+## 📡 Endpoints Disponíveis (Todos com Streaming SSE)
+
+A partir da última atualização, **todos os endpoints da API** utilizam a arquitetura de **Server-Sent Events (SSE)**. Eles não esperam tudo terminar para devolver um JSON enorme. Em vez disso, enviam eventos em tempo real (`yield`) enquanto a extração, o download ou a varredura acontecem, o que garante feedback visual imediato no frontend.
 
 ### 1. `POST /listar-urls-decretos-por-periodo`
-**Descrição:** Varredura de URLs de Diários Oficiais que possuem publicações de decretos dentro de um intervalo pré-definido passado como parâmetro.
-Gera URLs matemáticas para um intervalo de datas e filtra validando quais arquivos PDF realmente existem no servidor e quais contêm decretos válidos.
+**Descrição:** Varredura de URLs de Diários Oficiais que possuem publicações de decretos dentro de um intervalo pré-definido.
+Gera URLs matemáticas para um intervalo de datas e filtra validando quais arquivos PDF realmente existem no servidor e quais contêm decretos válidos. Retorna o andamento do processo via stream.
 - **Payload:** `{"data_inicio": "10/05/2026", "data_fim": "20/05/2026"}`
-- **Retorno:** JSON com a contagem total e uma lista de URLs prontas para extração.
+- **Retorno:** Stream SSE com logs e JSON final da lista.
 
 ### 2. `GET /montar-url`
 **Descrição:** Montar a URL do Diário Oficial a partir de uma data.
 Monta rapidamente a URL no padrão do Diário Oficial a partir de uma única data informada.
 - **Query Params:** `?data=06/03/2026`
-- **Retorno:** `{"sucesso": true, "data": "06/03/2026", "url": "https://imagens.seplag.ce.gov.br/PDF/..."}`
+- **Retorno:** Stream SSE confirmando a geração de `http://imagens.seplag.ce.gov.br/PDF/...`.
 
 ### 3. `POST /listar-decretos-doe`
 **Descrição:** Listar os decretos de uma publicação do DOE.
-Baixa o PDF da URL informada e retorna uma lista simplificada de todos os decretos e suas respectivas páginas, sem acionar a Inteligência Artificial.
+Baixa o PDF da URL informada e retorna uma lista simplificada de todos os decretos e suas respectivas páginas. O download e a leitura das páginas são reportados em tempo real via SSE.
 - **Payload:** `{"url_do_diario": "URL_DO_PDF"}`
-- **Retorno:** JSON contendo os nomes dos decretos e a página de cada um.
-
----
-
-## ⚡ Endpoints de Extração (Streaming SSE)
-As rotas de processamento executam requisições complexas (Download do PDF, Integração com IA, e Upload para MinIO/PostgreSQL). Por conta disso, elas utilizam a arquitetura **Server-Sent Events (SSE)**, que não espera tudo terminar para devolver um JSON enorme. Em vez disso, enviam eventos em tempo real (`yield`) enquanto a extração acontece.
+- **Retorno:** Stream SSE com os logs de processamento e lista JSON final.
 
 ### 4. `POST /extrair-decreto-unico`
-**Descrição:** Executa a extração do texto de um único decreto com logs em tempo real (SSE).
-Aciona a extração de apenas 1 decreto específico de uma edição do Diário Oficial.
+**Descrição:** Executa a extração do texto de um único decreto.
+Aciona a extração de apenas 1 decreto específico de uma edição do Diário Oficial e persiste no banco de dados.
 - **Payload:** `{"url_do_diario": "URL", "numero_do_decreto": "12345"}`
 
 ### 5. `POST /extrair-decretos-doe-lote`
-**Descrição:** Executar esteira de extração em lote de decretos de uma publicação do DOE com logs em tempo real (SSE).
-Processa e extrai **todos** os decretos encontrados em um Diário Oficial de uma só vez.
-- **Payload:** `{"url_do_diario": "URL"}`
+**Descrição:** Executar esteira de extração em lote de decretos de uma publicação do DOE.
+Processa e extrai **todos** os decretos encontrados em um Diário Oficial de uma só vez, criando um lote de importação rastreável via banco de dados.
+- **Payload:** 
+```json
+{
+  "url_do_diario": "URL_AQUI",
+  "id_usuario": "SEU_USUARIO"
+}
+```
 
 ---
 

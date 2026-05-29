@@ -17,18 +17,18 @@ def salvar_no_banco(resultado_json: dict):
     calcula o próximo index e insere os dados extraídos usando a regra contra duplicidade.
     """
     if not resultado_json.get("sucesso") or not resultado_json.get("dados"):
-        print("⚠️ Nenhum dado disponível para salvar.")
+        print("Nenhum dado disponível para salvar.")
         return
 
     def formatar_para_varchar(valor):
         if isinstance(valor, list):
-            return ", ".join(valor) if valor else None
-        return valor
+            return ", ".join(valor) if valor else ""
+        return valor if valor is not None else ""
 
     conn = None
     cursor = None
     try:
-        # 👇 SIMPLIFICAÇÃO APLICADA: Conexão desacoplada
+        # SIMPLIFICAÇÃO APLICADA: Conexão desacoplada
         conn, cursor = conectar_db()
 
         # Busca o maior index atual
@@ -91,13 +91,13 @@ def salvar_no_banco(resultado_json: dict):
         conn.commit()
 
         # Relatório final na tela
-        print(f"\n💾 RELATÓRIO DO BANCO DE DADOS:")
-        print(f"   ✅ {total_inseridos} novos decreto(s) salvo(s).")
+        print(f"\nRELATÓRIO DO BANCO DE DADOS:")
+        print(f"   {total_inseridos} novos decreto(s) salvo(s).")
         if total_duplicados > 0:
-            print(f"   ⏭️ {total_duplicados} decreto(s) ignorado(s) pois já existiam (Regra UNIQUE).")
+            print(f"   {total_duplicados} decreto(s) ignorado(s) pois já existiam (Regra UNIQUE).")
 
     except psycopg2.Error as e:
-        print(f"\n❌ Erro na operação de banco de dados:\n{e}")
+        print(f"\nErro na operação de banco de dados:\n{e}")
         if conn:
             conn.rollback()
         raise
@@ -118,7 +118,7 @@ def salvar_anexos_no_banco(resultado_json: dict):
     conn = None
     cursor = None
     try:
-        # 👇 SIMPLIFICAÇÃO APLICADA: Conexão desacoplada
+        # SIMPLIFICAÇÃO APLICADA: Conexão desacoplada
         conn, cursor = conectar_db()
 
         # Prevenção: Descobre o maior ID atual para fazer o autoincremento seguro
@@ -164,10 +164,10 @@ def salvar_anexos_no_banco(resultado_json: dict):
         conn.commit()
 
         if total_anexos_salvos > 0:
-            print(f"   📎 {total_anexos_salvos} anexo(s) de imagem vinculado(s) no banco com sucesso!")
+            print(f"   {total_anexos_salvos} anexo(s) de imagem vinculado(s) no banco com sucesso!")
 
     except psycopg2.Error as e:
-        print(f"\n❌ Erro na operação do banco de dados (Tabela de Anexos):\n{e}")
+        print(f"\nErro na operação do banco de dados (Tabela de Anexos):\n{e}")
         if conn:
             conn.rollback()
         raise
@@ -181,7 +181,7 @@ def buscar_decreto_no_banco(numero_decreto: str) -> dict:
     """
     Busca os dados de um decreto e seus anexos agregados em formato JSON.
     """
-    logger.info(f"🔍 Iniciando busca no banco pelo Decreto Nº {numero_decreto}...")
+    logger.info(f"Iniciando busca no banco pelo Decreto Nº {numero_decreto}...")
     numero_limpo = str(numero_decreto).replace(".", "").strip()
 
     try:
@@ -217,16 +217,42 @@ def buscar_decreto_no_banco(numero_decreto: str) -> dict:
         conn.close()
 
         if resultado:
-            logger.info(f"✅ Decreto {numero_decreto} encontrado com sucesso na base!")
+            logger.info(f"Decreto {numero_decreto} encontrado com sucesso na base!")
             return {"sucesso": True, "dados": dict(resultado)}
         else:
-            logger.warning(f"⚠️ Decreto {numero_decreto} não encontrado na base de dados.")
+            logger.warning(f"Decreto {numero_decreto} não encontrado na base de dados.")
             return {"sucesso": False, "mensagem": f"O Decreto Nº {numero_decreto} não foi encontrado."}
 
     except psycopg2.Error as e:
-        logger.error(f"❌ Erro crítico ao consultar o banco de dados:\n{e}")
+        logger.error(f"Erro crítico ao consultar o banco de dados:\n{e}")
         return {"sucesso": False, "mensagem": "Erro interno do servidor ao tentar consultar o banco de dados."}
 
-
-
-
+def criar_lote_decretos(url_fonte_lote: str, usuario: str) -> int:
+    """
+    Cria um registro de lote no banco de dados e retorna o ID gerado.
+    """
+    logger.info(f"Criando registro de lote para o usuário {usuario}...")
+    conn = None
+    cursor = None
+    try:
+        conn, cursor = conectar_db()
+        query = """
+            INSERT INTO lote_decretos (url_fonte_lote, usuario, data_importacao)
+            VALUES (%s, %s, NOW())
+            RETURNING id;
+        """
+        cursor.execute(query, (url_fonte_lote, usuario))
+        id_lote = cursor.fetchone()[0]
+        conn.commit()
+        logger.info(f"Lote {id_lote} criado com sucesso!")
+        return id_lote
+    except psycopg2.Error as e:
+        logger.error(f"Erro ao criar lote de decretos:\n{e}")
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()

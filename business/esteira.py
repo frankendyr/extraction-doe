@@ -8,7 +8,7 @@ import requests
 import urllib3
 from dotenv import load_dotenv
 from business.minio_business import enviar_imagens_minio
-from doe.esteira_doe import salvar_no_banco, salvar_anexos_no_banco
+from doe.esteira_doe import salvar_no_banco, salvar_anexos_no_banco, criar_lote_decretos
 import google.generativeai as genai
 import logging
 
@@ -28,10 +28,10 @@ try:
     modelos_validos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
     nome_modelo_escolhido = next((m for m in ["models/gemini-1.5-flash", "models/gemini-1.5-pro"] if m in modelos_validos), modelos_validos[0])
 
-    print(f"✅ Setup concluído! Modelo Gemini ativado: {nome_modelo_escolhido}")
+    print(f"Setup concluído! Modelo Gemini ativado: {nome_modelo_escolhido}")
 
 except Exception as e:
-    raise RuntimeError("❌ Erro fatal: Verifique se a variável 'GOOGLE_API_KEY' está configurada corretamente.") from e
+    raise RuntimeError("Erro fatal: Verifique se a variável 'GOOGLE_API_KEY' está configurada corretamente.") from e
 
 # Configuração básica do logger para a API
 logger = logging.getLogger("ExtratorDOE")
@@ -60,6 +60,8 @@ def baixar_doe(url):
 def listar_decretos_doe(pdf_bytes: bytes) -> list:
     """
     Lê o PDF da memória e extrai os decretos publicados.
+    Aplica regras rigorosas para evitar falsos positivos:
+    1. Apenas dentro da seção PODER EXECUTIVO (termina em GOVERNADORIA).
     Retorna uma lista de dicionários contendo a assinatura do decreto e a página.
     """
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -68,19 +70,35 @@ def listar_decretos_doe(pdf_bytes: bytes) -> list:
     padrao_regex = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+\s*,\s*de\s+\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
     molde_decreto = re.compile(padrao_regex, re.IGNORECASE)
 
+    dentro_do_poder_executivo = False
+
     for num_pagina in range(len(doc)):
         pagina = doc.load_page(num_pagina)
         texto_pagina = pagina.get_text("text")
 
         for linha in texto_pagina.splitlines():
-            if molde_decreto.match(linha):
-                linha_limpa = " ".join(linha.split())
+            linha_limpa = linha.strip()
+            
+            if not linha_limpa:
+                continue
+                
+            linha_upper = linha_limpa.upper()
 
-                decretos_encontrados.append({
-                    "decreto": linha_limpa,
-                    "pagina": num_pagina + 1
-                })
+            # Controle da Seção Principal
+            if linha_upper == "PODER EXECUTIVO":
+                dentro_do_poder_executivo = True
+            elif linha_upper == "GOVERNADORIA" and dentro_do_poder_executivo:
+                # O Diário Oficial tradicionalmente separa a Governadoria
+                dentro_do_poder_executivo = False
+            
+            if dentro_do_poder_executivo:
+                if molde_decreto.match(linha_limpa):
+                    decretos_encontrados.append({
+                        "decreto": " ".join(linha_limpa.split()),
+                        "pagina": num_pagina + 1
+                    })
 
+    doc.close()
     return decretos_encontrados
 
 def contem_decreto_doe(pdf_bytes: bytes, numero_decreto: str) -> bool:
@@ -405,7 +423,7 @@ def identificar_tabelas_llm(texto: str, nome_modelo: str) -> list:
     ###A SUA MISSÃO:
     Identifique ESTRUTURAS TABULARES ocultas no texto e reconstrua-as perfeitamente em Markdown.
 
-    ⚠️ REGRAS DE EXTRAÇÃO E PRESERVAÇÃO (CRÍTICO) ⚠️
+    REGRAS DE EXTRAÇÃO E PRESERVAÇÃO (CRÍTICO) 
     1. CORTE CIRÚRGICO: Inicie a extração para o campo `texto_original` EXATAMENTE no início dos cabeçalhos das colunas (ex: "ORGÃO/ UO/ PROGRAMA...", "ÓRGÃO SIGLA ORIGEM...").
     2. NÃO ENGULA TEXTO: NUNCA inclua os títulos gerais dos anexos, subtítulos ou texto explicativo que antecedem as colunas da tabela no campo `texto_original`. Deixe que eles permaneçam intactos fora da área que será substituída. O seu trabalho é APENAS estruturar a grelha.
     3. PROIBIDO CONCATENAR: NUNCA junte níveis hierárquicos diferentes numa única célula usando barras (/).
@@ -1110,11 +1128,11 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str) -> dict:
 
     decreto_principal, anexos = separar_decreto_dos_anexos(texto_limpo)
 
-    logger.info("[IA] Analisando tabelas do corpo principal e anexos...")
+    logger.info("Analisando tabelas do corpo principal e anexos...")
     decreto_principal_formatado = processar_texto_com_llm("Corpo do Decreto", decreto_principal, nome_modelo_escolhido, limite_chars=40000)
     anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=40000)
 
-    logger.info("[IA] Extraindo metadados inteligentes...")
+    logger.info("Extraindo metadados inteligentes...")
     metadados_llm = extrair_metadados_com_llm(decreto_principal, nome_modelo_escolhido)
 
     url_direta = f"{url_alvo}#page={pagina_doe}"
@@ -1194,7 +1212,7 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str) -> dict:
 
         num_decreto = match_numero.group(1).strip()
 
-        logger.info(f"⏳ [{index}/{total_decretos}] Processando Decreto Nº {num_decreto}...")
+        logger.info(f"[{index}/{total_decretos}] Processando Decreto Nº {num_decreto}...")
 
         texto_bruto = extrair_texto_bruto_decreto(arquivo_doe, num_decreto)
 
@@ -1218,13 +1236,13 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str) -> dict:
 
         decreto_principal, anexos = separar_decreto_dos_anexos(texto_limpo)
 
-        logger.info(f"[{num_decreto}] 🤖 [IA] Analisando tabelas do corpo principal...")
+        logger.info(f"[{num_decreto}] Analisando tabelas do corpo principal...")
         decreto_principal_formatado = processar_texto_com_llm("Corpo do Decreto", decreto_principal, nome_modelo_escolhido, limite_chars=40000)
 
-        logger.info(f"[{num_decreto}] 🤖 [IA] Analisando tabelas dos anexos...")
+        logger.info(f"[{num_decreto}] Analisando tabelas dos anexos...")
         anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=40000)
 
-        logger.info(f"[{num_decreto}] 🧠 [IA] Extraindo metadados inteligentes...")
+        logger.info(f"[{num_decreto}] Extraindo metadados inteligentes...")
         metadados_llm = extrair_metadados_com_llm(decreto_principal, nome_modelo_escolhido)
 
         url_direta = f"{url_alvo}#page={pagina_doe}"
@@ -1260,9 +1278,9 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str) -> dict:
             }
         })
 
-        logger.info(f"✅ Decreto {num_decreto} finalizado com sucesso!")
+        logger.info(f"Decreto {num_decreto} finalizado com sucesso!")
 
-    logger.info(f"🎉 Processamento em lote concluído! {len(resultados_finais)} de {total_decretos} decretos extraídos com sucesso.")
+    logger.info(f"Processamento em lote concluído! {len(resultados_finais)} de {total_decretos} decretos extraídos com sucesso.")
 
     return {
         "sucesso": True,
@@ -1270,7 +1288,7 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str) -> dict:
         "dados": resultados_finais
     }
 
-def processar_diario_em_lote(url_alvo: str):
+def processar_diario_em_lote(url_alvo: str, id_lote: int = None):
     yield json.dumps({"status": "log", "mensagem": "Baixando o Diário Oficial da URL..."}) + "\n"
     logger.info("Baixando o Diário Oficial da URL...")
     arquivo_doe = baixar_doe(url_alvo)
@@ -1318,8 +1336,8 @@ def processar_diario_em_lote(url_alvo: str):
 
         num_decreto = match_numero.group(1).strip()
 
-        yield json.dumps({"status": "log", "mensagem": f"⏳ [{index}/{total_decretos}] Processando Decreto Nº {num_decreto}..."}) + "\n"
-        logger.info(f"⏳ [{index}/{total_decretos}] Processando Decreto Nº {num_decreto}...")
+        yield json.dumps({"status": "log", "mensagem": f"[{index}/{total_decretos}] Processando Decreto Nº {num_decreto}..."}) + "\n"
+        logger.info(f"[{index}/{total_decretos}] Processando Decreto Nº {num_decreto}...")
 
         texto_bruto = extrair_texto_bruto_decreto(arquivo_doe, num_decreto)
 
@@ -1346,16 +1364,16 @@ def processar_diario_em_lote(url_alvo: str):
 
         decreto_principal, anexos = separar_decreto_dos_anexos(texto_limpo)
 
-        yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] 🤖 [IA] Analisando tabelas do corpo principal..."}) + "\n"
-        logger.info(f"[{num_decreto}] 🤖 [IA] Analisando tabelas do corpo principal...")
+        yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Analisando tabelas do corpo principal..."}) + "\n"
+        logger.info(f"[{num_decreto}] Analisando tabelas do corpo principal...")
         decreto_principal_formatado = processar_texto_com_llm("Corpo do Decreto", decreto_principal, nome_modelo_escolhido, limite_chars=40000)
 
-        yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] 🤖 [IA] Analisando tabelas dos anexos..."}) + "\n"
-        logger.info(f"[{num_decreto}] 🤖 [IA] Analisando tabelas dos anexos...")
+        yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Analisando tabelas dos anexos..."}) + "\n"
+        logger.info(f"[{num_decreto}] Analisando tabelas dos anexos...")
         anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=40000)
 
-        yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] 🧠 [IA] Extraindo metadados inteligentes..."}) + "\n"
-        logger.info(f"[{num_decreto}] 🧠 [IA] Extraindo metadados inteligentes...")
+        yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Extraindo metadados inteligentes..."}) + "\n"
+        logger.info(f"[{num_decreto}] Extraindo metadados inteligentes...")
         metadados_llm = extrair_metadados_com_llm(decreto_principal, nome_modelo_escolhido)
 
         url_direta = f"{url_alvo}#page={pagina_doe}"
@@ -1375,7 +1393,7 @@ def processar_diario_em_lote(url_alvo: str):
             "responsaveis": metadados_llm.get("responsaveis", []),
             "data_diario": data_diario_formatada,
             "url": url_direta,
-            "arquivo_origem": url_alvo,
+            "arquivo_origem": str(id_lote) if id_lote else url_alvo,
             "id_tipo": 1,
             "id_documento": f"1_{numero_sem_ponto}_{data_id_doc}",
             "processado": False,
@@ -1391,10 +1409,10 @@ def processar_diario_em_lote(url_alvo: str):
             }
         })
 
-        yield json.dumps({"status": "log", "mensagem": f"✅ Decreto {num_decreto} finalizado com sucesso!"}) + "\n"
-        logger.info(f"✅ Decreto {num_decreto} finalizado com sucesso!")
+        yield json.dumps({"status": "log", "mensagem": f"Decreto {num_decreto} finalizado com sucesso!"}) + "\n"
+        logger.info(f"Decreto {num_decreto} finalizado com sucesso!")
 
-    msg_final = f"🎉 Processamento em lote concluído! {len(resultados_finais)} de {total_decretos} decretos extraídos com sucesso."
+    msg_final = f"Processamento em lote concluído! {len(resultados_finais)} de {total_decretos} decretos extraídos com sucesso."
     yield json.dumps({"status": "log", "mensagem": msg_final}) + "\n"
     logger.info(msg_final)
 
@@ -1404,15 +1422,22 @@ def processar_diario_em_lote(url_alvo: str):
         "dados": resultados_finais
     }}) + "\n"
 
-def executar_esteira_publicacao_doe(url_do_diario: str):
-    yield json.dumps({"status": "log", "mensagem": f"🚀 INICIANDO ESTEIRA EM LOTE: {url_do_diario}"}) + "\n"
+def executar_esteira_publicacao_doe(url_do_diario: str, id_usuario: str):
+    yield json.dumps({"status": "log", "mensagem": f"INICIANDO ESTEIRA EM LOTE: {url_do_diario}"}) + "\n"
     logger.info("================================================================")
-    logger.info(f"🚀 INICIANDO ESTEIRA EM LOTE: {url_do_diario}")
+    logger.info(f"INICIANDO ESTEIRA EM LOTE: {url_do_diario}")
     logger.info("================================================================")
+
+    try:
+        id_lote = criar_lote_decretos(url_do_diario, id_usuario)
+        yield json.dumps({"status": "log", "mensagem": f"Lote de importação registrado (ID: {id_lote})"}) + "\n"
+    except Exception as e:
+        yield json.dumps({"status": "error", "mensagem": f"Falha ao registrar lote: {e}"}) + "\n"
+        return
 
     resultado_final = None
 
-    for evento in processar_diario_em_lote(url_do_diario):
+    for evento in processar_diario_em_lote(url_do_diario, id_lote):
         try:
             evento_dict = json.loads(evento.strip())
             if evento_dict.get("status") == "done":
@@ -1424,32 +1449,32 @@ def executar_esteira_publicacao_doe(url_do_diario: str):
 
     if resultado_final and resultado_final.get("sucesso"):
         if resultado_final.get("total_decretos") == 0:
-            yield json.dumps({"status": "log", "mensagem": "🛑 Fluxo interrompido limpo: Não há dados para processar."}) + "\n"
-            logger.info("🛑 Fluxo interrompido limpo: Não há dados para processar ou salvar no banco.")
+            yield json.dumps({"status": "log", "mensagem": "Fluxo interrompido limpo: Não há dados para processar."}) + "\n"
+            logger.info("Fluxo interrompido limpo: Não há dados para processar ou salvar no banco.")
             yield json.dumps({"status": "done", "resultado": resultado_final}) + "\n"
             return
 
-        yield json.dumps({"status": "log", "mensagem": f"✅ Extração de IA concluída! Total de decretos: {resultado_final.get('total_decretos')}"}) + "\n"
-        logger.info(f"✅ Extração de IA concluída! Total de decretos: {resultado_final.get('total_decretos')}")
+        yield json.dumps({"status": "log", "mensagem": f"Extração concluída! Total de decretos: {resultado_final.get('total_decretos')}"}) + "\n"
+        logger.info(f"Extração concluída! Total de decretos: {resultado_final.get('total_decretos')}")
 
-        yield json.dumps({"status": "log", "mensagem": "💾 Iniciando gravação em lote no PostgreSQL..."}) + "\n"
-        logger.info("💾 Iniciando gravação em lote no PostgreSQL (Desenvolvimento)...")
+        yield json.dumps({"status": "log", "mensagem": "Iniciando gravação em lote no PostgreSQL..."}) + "\n"
+        logger.info("Iniciando gravação em lote no PostgreSQL (Desenvolvimento)...")
 
         try:
             salvar_no_banco(resultado_final)
             salvar_anexos_no_banco(resultado_final)
             
-            yield json.dumps({"status": "log", "mensagem": "✅ Todos os dados e anexos gravados no banco com sucesso!"}) + "\n"
-            logger.info("✅ Todos os dados e anexos foram gravados no banco com sucesso!")
+            yield json.dumps({"status": "log", "mensagem": "Todos os dados e anexos gravados no banco com sucesso!"}) + "\n"
+            logger.info("Todos os dados e anexos foram gravados no banco com sucesso!")
             
             yield json.dumps({"status": "done", "resultado": resultado_final}) + "\n"
 
         except Exception as e:
-            msg_erro = f"❌ Lote extraído, mas falhou ao salvar no banco: {e}"
+            msg_erro = f"Lote extraído, mas falhou ao salvar no banco: {e}"
             yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
             logger.error(msg_erro)
     else:
-        msg_erro = f"❌ A esteira em lote falhou: {resultado_final.get('mensagem') if resultado_final else 'Erro desconhecido'}"
+        msg_erro = f"A esteira em lote falhou: {resultado_final.get('mensagem') if resultado_final else 'Erro desconhecido'}"
         yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
         logger.error(msg_erro)
 
@@ -1522,13 +1547,13 @@ def processar_diario_unico(url_alvo: str, numero_alvo: str):
 
     decreto_principal, anexos = separar_decreto_dos_anexos(texto_limpo)
 
-    yield json.dumps({"status": "log", "mensagem": "[IA] Analisando tabelas do corpo principal e anexos..."}) + "\n"
-    logger.info("[IA] Analisando tabelas do corpo principal e anexos...")
+    yield json.dumps({"status": "log", "mensagem": "Analisando tabelas do corpo principal e anexos..."}) + "\n"
+    logger.info("Analisando tabelas do corpo principal e anexos...")
     decreto_principal_formatado = processar_texto_com_llm("Corpo do Decreto", decreto_principal, nome_modelo_escolhido, limite_chars=40000)
     anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=40000)
 
-    yield json.dumps({"status": "log", "mensagem": "[IA] Extraindo metadados inteligentes..."}) + "\n"
-    logger.info("[IA] Extraindo metadados inteligentes...")
+    yield json.dumps({"status": "log", "mensagem": "Extraindo metadados inteligentes..."}) + "\n"
+    logger.info("Extraindo metadados inteligentes...")
     metadados_llm = extrair_metadados_com_llm(decreto_principal, nome_modelo_escolhido)
 
     url_direta = f"{url_alvo}#page={pagina_doe}"
@@ -1574,9 +1599,9 @@ def processar_diario_unico(url_alvo: str, numero_alvo: str):
     }}) + "\n"
 
 def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str):
-    yield json.dumps({"status": "log", "mensagem": f"🚀 INICIANDO ESTEIRA PARA O DECRETO: {numero_do_decreto}"}) + "\n"
+    yield json.dumps({"status": "log", "mensagem": f"INICIANDO ESTEIRA PARA O DECRETO: {numero_do_decreto}"}) + "\n"
     logger.info("================================================================")
-    logger.info(f"🚀 INICIANDO ESTEIRA PARA O DECRETO: {numero_do_decreto}")
+    logger.info(f"INICIANDO ESTEIRA PARA O DECRETO: {numero_do_decreto}")
     logger.info(f"🔗 URL: {url_do_diario}")
     logger.info("================================================================")
 
@@ -1593,26 +1618,43 @@ def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str):
             yield evento
 
     if resultado_final and resultado_final.get("sucesso"):
-        yield json.dumps({"status": "log", "mensagem": "✅ Extração da IA concluída com sucesso!"}) + "\n"
-        logger.info("✅ Extração da IA concluída com sucesso!")
+        yield json.dumps({"status": "log", "mensagem": "Extração concluída com sucesso!"}) + "\n"
+        logger.info("Extração concluída com sucesso!")
 
-        yield json.dumps({"status": "log", "mensagem": "💾 Iniciando gravação no PostgreSQL..."}) + "\n"
-        logger.info("💾 Iniciando gravação no PostgreSQL (Desenvolvimento)...")
+        yield json.dumps({"status": "log", "mensagem": "Iniciando gravação no PostgreSQL..."}) + "\n"
+        logger.info("Iniciando gravação no PostgreSQL (Desenvolvimento)...")
 
         try:
             salvar_no_banco(resultado_final)
             salvar_anexos_no_banco(resultado_final)
             
-            yield json.dumps({"status": "log", "mensagem": "✅ Dados salvos com sucesso no banco de dados!"}) + "\n"
-            logger.info("✅ Dados salvos com sucesso no banco de dados!")
+            yield json.dumps({"status": "log", "mensagem": "Dados salvos com sucesso no banco de dados!"}) + "\n"
+            logger.info("Dados salvos com sucesso no banco de dados!")
             
             yield json.dumps({"status": "done", "resultado": resultado_final}) + "\n"
 
         except Exception as e:
-            msg_erro = f"❌ Decreto extraído, mas falhou ao salvar no banco: {e}"
+            msg_erro = f"Decreto extraído, mas falhou ao salvar no banco: {e}"
             yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
             logger.error(msg_erro)
     else:
-        msg_erro = f"❌ A esteira falhou: {resultado_final.get('mensagem') if resultado_final else 'Erro desconhecido'}"
+        msg_erro = f"A esteira falhou: {resultado_final.get('mensagem') if resultado_final else 'Erro desconhecido'}"
         yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
         logger.error(msg_erro)
+def executar_listagem_decretos(url_alvo: str):
+    yield json.dumps({"status": "log", "mensagem": "Baixando o Diário Oficial da URL..."}) + "\n"
+    arquivo_doe = baixar_doe(url_alvo)
+    
+    if not arquivo_doe:
+        yield json.dumps({"status": "error", "mensagem": "Falha ao baixar o PDF da URL fornecida."}) + "\n"
+        return
+        
+    yield json.dumps({"status": "log", "mensagem": "Lendo o PDF e listando decretos publicados..."}) + "\n"
+    decretos = listar_decretos_doe(arquivo_doe)
+    
+    yield json.dumps({
+        "status": "done",
+        "sucesso": True,
+        "total": len(decretos),
+        "decretos": decretos
+    }) + "\n"
