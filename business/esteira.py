@@ -1641,20 +1641,4 @@ def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str):
         msg_erro = f"A esteira falhou: {resultado_final.get('mensagem') if resultado_final else 'Erro desconhecido'}"
         yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
         logger.error(msg_erro)
-def executar_listagem_decretos(url_alvo: str):
-    yield json.dumps({"status": "log", "mensagem": "Baixando o Diário Oficial da URL..."}) + "\n"
-    arquivo_doe = baixar_doe(url_alvo)
-    
-    if not arquivo_doe:
-        yield json.dumps({"status": "error", "mensagem": "Falha ao baixar o PDF da URL fornecida."}) + "\n"
-        return
-        
-    yield json.dumps({"status": "log", "mensagem": "Lendo o PDF e listando decretos publicados..."}) + "\n"
-    decretos = listar_decretos_doe(arquivo_doe)
-    
-    yield json.dumps({
-        "status": "done",
-        "sucesso": True,
-        "total": len(decretos),
-        "decretos": decretos
-    }) + "\n"
+

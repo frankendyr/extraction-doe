@@ -34,15 +34,12 @@ def gerar_urls_por_periodo(data_inicio: str, data_fim: str) -> list:
         return []
 
 def orquestrar_varredura(data_inicio: str, data_fim: str):
-    yield json.dumps({"status": "log", "mensagem": f"Iniciando varredura entre {data_inicio} e {data_fim}..."}) + "\n"
     logger.info(f"Iniciando varredura entre {data_inicio} e {data_fim}...")
     
     urls_brutas = gerar_urls_por_periodo(data_inicio, data_fim)
     if not urls_brutas:
-        yield json.dumps({"status": "error", "mensagem": "Nenhuma URL pôde ser gerada ou datas inválidas."}) + "\n"
-        return
+        return {"sucesso": False, "mensagem": "Nenhuma URL pôde ser gerada ou datas inválidas."}
         
-    yield json.dumps({"status": "log", "mensagem": f"Fase 2: Testando a existência de {len(urls_brutas)} URLs geradas..."}) + "\n"
     logger.info(f"Fase 2: Testando a existência de {len(urls_brutas)} URLs geradas...")
     
     urls_validas = []
@@ -50,7 +47,7 @@ def orquestrar_varredura(data_inicio: str, data_fim: str):
     sessao = requests.Session()
     for url in urls_brutas:
         try:
-            resposta = sessao.get(url, verify=False, timeout=10, headers=headers, stream=True)
+            resposta = sessao.get(url, verify=False, timeout=10, headers=headers, stream=True, allow_redirects=False)
             if resposta.status_code == 200 and 'application/pdf' in resposta.headers.get('Content-Type', ''):
                 urls_validas.append(url)
             resposta.close()
@@ -58,27 +55,23 @@ def orquestrar_varredura(data_inicio: str, data_fim: str):
             pass
     sessao.close()
     
-    yield json.dumps({"status": "log", "mensagem": f"Encontrados {len(urls_validas)} PDFs reais no servidor."}) + "\n"
-    yield json.dumps({"status": "log", "mensagem": f"Fase 3: Lendo as páginas em busca de decretos..."}) + "\n"
+    logger.info(f"Encontrados {len(urls_validas)} PDFs reais no servidor.")
     logger.info(f"Fase 3: Lendo as páginas em busca de decretos...")
     
     urls_premiadas = []
     for i, url in enumerate(urls_validas, 1):
-        yield json.dumps({"status": "log", "mensagem": f"[{i}/{len(urls_validas)}] Analisando {url}..."}) + "\n"
         arquivo_pdf = baixar_doe(url)
         if not arquivo_pdf:
             continue
         lista_decretos = listar_decretos_doe(arquivo_pdf)
         if len(lista_decretos) > 0:
             urls_premiadas.append(url)
-            yield json.dumps({"status": "log", "mensagem": f"   APROVADO: {len(lista_decretos)} decretos encontrados."}) + "\n"
             logger.info(f"APROVADO: {url} ({len(lista_decretos)} decretos)")
         else:
-            yield json.dumps({"status": "log", "mensagem": f"   DESCARTADO: Nenhum decreto encontrado."}) + "\n"
             logger.warning(f"DESCARTADO: {url} (0 decretos)")
             
-    yield json.dumps({"status": "done", "total_encontrado": len(urls_premiadas), "urls": urls_premiadas}) + "\n"
     logger.info(f"Varredura concluída! {len(urls_premiadas)} links possuem decretos.")
+    return {"sucesso": True, "total_encontrado": len(urls_premiadas), "urls": urls_premiadas}
 
 def montar_url_por_data(data: str) -> dict:
     formato_entrada = "%d/%m/%Y"
