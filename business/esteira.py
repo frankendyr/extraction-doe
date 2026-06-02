@@ -1642,3 +1642,40 @@ def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str):
         yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
         logger.error(msg_erro)
 
+
+def executar_multiplos_lotes_doe(urls: list, id_usuario: str):
+    """
+    Orquestra o processamento completo de múltiplos Diários Oficiais em lote.
+    """
+    total_urls = len(urls)
+    yield json.dumps({"status": "log", "mensagem": f"Iniciando processamento múltiplo de {total_urls} URLs..."}) + "\n"
+    logger.info(f"Iniciando processamento múltiplo de {total_urls} URLs...")
+    
+    resultados_totais = []
+    
+    for i, url in enumerate(urls, 1):
+        yield json.dumps({"status": "log", "mensagem": f"--- Processando URL {i} de {total_urls} ---"}) + "\n"
+        logger.info(f"--- Processando URL {i} de {total_urls} ---")
+        
+        # Consome o gerador da esteira e repassa os eventos
+        resultado_lote = None
+        for evento_json in executar_esteira_publicacao_doe(url, id_usuario):
+            evento = json.loads(evento_json)
+            if evento.get("status") == "done":
+                resultado_lote = evento.get("resultados")
+                # Não repassa o done individual, converte em log para não encerrar o stream
+                yield json.dumps({"status": "log", "mensagem": f"Concluído processamento da URL {i}"}) + "\n"
+            else:
+                yield evento_json
+                
+        resultados_totais.append({
+            "url": url,
+            "resultado": resultado_lote
+        })
+        
+    yield json.dumps({"status": "done", "resultados": {
+        "sucesso": True,
+        "total_urls_processadas": total_urls,
+        "detalhes": resultados_totais
+    }}) + "\n"
+    logger.info("Processamento múltiplo finalizado!")

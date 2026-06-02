@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from business.esteira import executar_esteira_decreto_unico, executar_esteira_publicacao_doe, baixar_doe, listar_decretos_doe
+from business.esteira import executar_esteira_decreto_unico, executar_esteira_publicacao_doe, baixar_doe, listar_decretos_doe, executar_multiplos_lotes_doe
 from business.varredura_business import orquestrar_varredura, montar_url_por_data
 
 app = FastAPI(
@@ -36,6 +36,10 @@ class ListarDecretosRequest(BaseModel):
 class VarreduraRequest(BaseModel):
     data_inicio: str
     data_fim: str
+
+class LotePeriodoRequest(BaseModel):
+    urls: list[str]
+    id_usuario: str
 
 
 # @app.post("/extrair-decreto-unico", summary="Executa a extração do texto de um único decreto com logs em tempo real (SSE)")
@@ -77,6 +81,15 @@ def executar_diario_lote(req: DiarioLoteRequest):
     Retorna os logs em tempo real via Server-Sent Events (StreamingResponse).
     """
     gerador = executar_esteira_publicacao_doe(req.url_do_diario, req.id_usuario)
+    return StreamingResponse(gerador, media_type="text/event-stream")
+
+@app.post("/extrair-decretos-lote-por-periodo", summary="Executar esteira de extração de múltiplos diários a partir de uma lista de URLs com logs em tempo real (SSE)")
+def executar_diarios_lote_periodo(req: LotePeriodoRequest):
+    """
+    Processa uma lista de URLs de Diários Oficiais sequencialmente.
+    Retorna os logs em tempo real via Server-Sent Events (StreamingResponse).
+    """
+    gerador = executar_multiplos_lotes_doe(req.urls, req.id_usuario)
     return StreamingResponse(gerador, media_type="text/event-stream")
 
 @app.post("/listar-decretos-doe", summary="Listar os decretos de uma publicação do DOE")
