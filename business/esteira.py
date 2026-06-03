@@ -1370,7 +1370,7 @@ def processar_diario_em_lote(url_alvo: str, id_lote: int = None):
 
         yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Analisando tabelas dos anexos..."}) + "\n"
         logger.info(f"[{num_decreto}] Analisando tabelas dos anexos...")
-        anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=40000)
+        anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=10000)
 
         yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Extraindo metadados inteligentes..."}) + "\n"
         logger.info(f"[{num_decreto}] Extraindo metadados inteligentes...")
