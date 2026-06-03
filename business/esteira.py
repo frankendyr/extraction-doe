@@ -1130,7 +1130,7 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str) -> dict:
 
     logger.info("Analisando tabelas do corpo principal e anexos...")
     decreto_principal_formatado = processar_texto_com_llm("Corpo do Decreto", decreto_principal, nome_modelo_escolhido, limite_chars=40000)
-    anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=40000)
+    anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=10000)
 
     logger.info("Extraindo metadados inteligentes...")
     metadados_llm = extrair_metadados_com_llm(decreto_principal, nome_modelo_escolhido)
@@ -1240,7 +1240,7 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str) -> dict:
         decreto_principal_formatado = processar_texto_com_llm("Corpo do Decreto", decreto_principal, nome_modelo_escolhido, limite_chars=40000)
 
         logger.info(f"[{num_decreto}] Analisando tabelas dos anexos...")
-        anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=40000)
+        anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=10000)
 
         logger.info(f"[{num_decreto}] Extraindo metadados inteligentes...")
         metadados_llm = extrair_metadados_com_llm(decreto_principal, nome_modelo_escolhido)
@@ -1550,7 +1550,7 @@ def processar_diario_unico(url_alvo: str, numero_alvo: str):
     yield json.dumps({"status": "log", "mensagem": "Analisando tabelas do corpo principal e anexos..."}) + "\n"
     logger.info("Analisando tabelas do corpo principal e anexos...")
     decreto_principal_formatado = processar_texto_com_llm("Corpo do Decreto", decreto_principal, nome_modelo_escolhido, limite_chars=40000)
-    anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=40000)
+    anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=10000)
 
     yield json.dumps({"status": "log", "mensagem": "Extraindo metadados inteligentes..."}) + "\n"
     logger.info("Extraindo metadados inteligentes...")
