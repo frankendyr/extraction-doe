@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from business.esteira import executar_esteira_decreto_unico, executar_esteira_publicacao_doe, baixar_doe, listar_decretos_doe, registrar_lotes_banco
+from business.esteira import executar_esteira_decreto_unico, executar_esteira_publicacao_doe, baixar_doe, listar_decretos_doe, registrar_lotes_banco, executar_multiplos_lotes_por_ids
 from doe.esteira_doe import buscar_url_por_id_lote
 from business.varredura_business import orquestrar_varredura, montar_url_por_data
 
@@ -43,7 +43,7 @@ class LotePeriodoRequest(BaseModel):
     id_usuario: str
 
 class ProcessarLoteRequest(BaseModel):
-    id_lote: int
+    ids_lotes: list[int]
 
 
 # @app.post("/extrair-decreto-unico", summary="Executa a extração do texto de um único decreto com logs em tempo real (SSE)")
@@ -97,20 +97,13 @@ def extrair_diarios_em_lote(req: LotePeriodoRequest):
     ids = registrar_lotes_banco(req.urls, req.id_usuario)
     return {"sucesso": True, "mensagem": "Lotes registrados com sucesso.", "lotes_criados": ids}
 
-@app.post("/processar-extracao-lote-decretos", summary="Processar a extração profunda de um lote previamente registrado (SSE)")
+@app.post("/processar-extracao-lote-decretos", summary="Processar a extração profunda de lotes previamente registrados (SSE)")
 def processar_lote_individual(req: ProcessarLoteRequest):
     """
-    Processa um Diário Oficial cujo lote já foi registrado no banco.
+    Processa uma lista de Diários Oficiais cujos lotes já foram registrados no banco.
     Retorna os logs em tempo real via Server-Sent Events (StreamingResponse).
     """
-    # 1. Recupera as informações do lote
-    try:
-        url_diario, usuario = buscar_url_por_id_lote(req.id_lote)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-        
-    # 2. Executa a extração em lote (Streaming)
-    gerador = executar_esteira_publicacao_doe(url_diario, usuario, req.id_lote)
+    gerador = executar_multiplos_lotes_por_ids(req.ids_lotes)
     return StreamingResponse(gerador, media_type="text/event-stream")
 
 @app.post("/listar-decretos-doe", summary="Listar os decretos de uma publicação do DOE")

@@ -1647,3 +1647,47 @@ def registrar_lotes_banco(urls: list, id_usuario: str) -> list[int]:
         id_lote = criar_lote_decretos(url, id_usuario)
         ids_gerados.append(id_lote)
     return ids_gerados
+
+def executar_multiplos_lotes_por_ids(ids_lotes: list[int]):
+    """
+    Orquestra o processamento completo de múltiplos Diários Oficiais em lote a partir de seus IDs.
+    """
+    total_lotes = len(ids_lotes)
+    yield json.dumps({"status": "log", "mensagem": f"Iniciando processamento múltiplo de {total_lotes} lotes..."}) + "\n"
+    logger.info(f"Iniciando processamento múltiplo de {total_lotes} lotes...")
+    
+    resultados_totais = []
+    
+    for i, id_lote in enumerate(ids_lotes, 1):
+        yield json.dumps({"status": "log", "mensagem": f"--- Processando Lote {i} de {total_lotes} (ID: {id_lote}) ---"}) + "\n"
+        logger.info(f"--- Processando Lote {i} de {total_lotes} (ID: {id_lote}) ---")
+        
+        try:
+            url, usuario = buscar_url_por_id_lote(id_lote)
+        except Exception as e:
+            msg = f"Lote ID {id_lote} não encontrado ou inválido: {e}"
+            yield json.dumps({"status": "error", "mensagem": msg}) + "\n"
+            logger.error(msg)
+            continue
+            
+        resultado_lote = None
+        for evento_json in executar_esteira_publicacao_doe(url, usuario, id_lote):
+            evento = json.loads(evento_json)
+            if evento.get("status") == "done":
+                resultado_lote = evento.get("resultado") or evento.get("resultados")
+                yield json.dumps({"status": "log", "mensagem": f"Concluído processamento do Lote {id_lote}"}) + "\n"
+            else:
+                yield evento_json
+                
+        resultados_totais.append({
+            "id_lote": id_lote,
+            "url": url,
+            "resultado": resultado_lote
+        })
+        
+    yield json.dumps({"status": "done", "resultados": {
+        "sucesso": True,
+        "total_lotes_processados": total_lotes,
+        "detalhes": resultados_totais
+    }}) + "\n"
+    logger.info("Processamento múltiplo por IDs finalizado!")
