@@ -97,3 +97,5 @@ async function iniciarProcessamentoEmTempoReal() {
 ```
 
 Neste modelo, a cada vez que o servidor Python chamar o `yield json.dumps()`, o laço `while` no Javascript vai pegar essa linha, permitindo que a tela do usuário pisque e avise: *"Baixando PDF..."*, *"Lendo anexos..."*, *"Salvando no banco..."*, garantindo uma experiência super fluida e moderna.
+
+TEmos duas branchs.
