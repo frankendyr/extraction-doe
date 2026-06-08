@@ -51,12 +51,12 @@ Apenas cria os registros rastreáveis no banco (tabela `lote_decretos`) retornan
 ```
 
 ### 5. `POST /processar-extracao-lote-decretos`
-**Descrição:** Processar a extração profunda de um lote previamente registrado (SSE).
-Recebe um `id_lote`, recupera a URL e o usuário do banco e executa toda a leitura LLM de forma assíncrona, salvando os decretos encontrados.
+**Descrição:** Processar a extração profunda de lotes previamente registrados (SSE).
+Recebe uma lista de IDs (`ids_lotes`), recupera as URLs e os usuários do banco e executa toda a leitura LLM de forma assíncrona, salvando os decretos encontrados sequencialmente.
 - **Payload:** 
 ```json
 {
-  "id_lote": 123
+  "ids_lotes": [123, 124, 125]
 }
 ```
 
@@ -76,7 +76,7 @@ async function iniciarProcessamentoEmTempoReal() {
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream' // Opcional, mas boa prática
         },
-        body: JSON.stringify({ id_lote: 123 })
+        body: JSON.stringify({ ids_lotes: [123, 124, 125] })
     });
 
     const reader = response.body.getReader();
