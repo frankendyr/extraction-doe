@@ -8,7 +8,7 @@ import requests
 import urllib3
 from dotenv import load_dotenv
 from business.minio_business import enviar_imagens_minio
-from doe.esteira_doe import salvar_no_banco, salvar_anexos_no_banco, criar_lote_decretos
+from doe.esteira_doe import salvar_no_banco, salvar_anexos_no_banco, criar_lote_decretos, buscar_url_por_id_lote
 import google.generativeai as genai
 import logging
 
@@ -1422,18 +1422,11 @@ def processar_diario_em_lote(url_alvo: str, id_lote: int = None):
         "dados": resultados_finais
     }}) + "\n"
 
-def executar_esteira_publicacao_doe(url_do_diario: str, id_usuario: str):
+def executar_esteira_publicacao_doe(url_do_diario: str, id_usuario: str, id_lote: int):
     yield json.dumps({"status": "log", "mensagem": f"INICIANDO ESTEIRA EM LOTE: {url_do_diario}"}) + "\n"
     logger.info("================================================================")
-    logger.info(f"INICIANDO ESTEIRA EM LOTE: {url_do_diario}")
+    logger.info(f"INICIANDO ESTEIRA EM LOTE: {url_do_diario} (Lote: {id_lote})")
     logger.info("================================================================")
-
-    try:
-        id_lote = criar_lote_decretos(url_do_diario, id_usuario)
-        yield json.dumps({"status": "log", "mensagem": f"Lote de importação registrado (ID: {id_lote})"}) + "\n"
-    except Exception as e:
-        yield json.dumps({"status": "error", "mensagem": f"Falha ao registrar lote: {e}"}) + "\n"
-        return
 
     resultado_final = None
 
@@ -1643,39 +1636,14 @@ def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str):
         logger.error(msg_erro)
 
 
-def executar_multiplos_lotes_doe(urls: list, id_usuario: str):
+def registrar_lotes_banco(urls: list, id_usuario: str) -> list[int]:
     """
-    Orquestra o processamento completo de múltiplos Diários Oficiais em lote.
+    Função síncrona que cria os registros de lote_decretos no banco para uma lista de URLs.
+    Retorna a lista de IDs de lotes gerados.
     """
-    total_urls = len(urls)
-    yield json.dumps({"status": "log", "mensagem": f"Iniciando processamento múltiplo de {total_urls} URLs..."}) + "\n"
-    logger.info(f"Iniciando processamento múltiplo de {total_urls} URLs...")
-    
-    resultados_totais = []
-    
-    for i, url in enumerate(urls, 1):
-        yield json.dumps({"status": "log", "mensagem": f"--- Processando URL {i} de {total_urls} ---"}) + "\n"
-        logger.info(f"--- Processando URL {i} de {total_urls} ---")
-        
-        # Consome o gerador da esteira e repassa os eventos
-        resultado_lote = None
-        for evento_json in executar_esteira_publicacao_doe(url, id_usuario):
-            evento = json.loads(evento_json)
-            if evento.get("status") == "done":
-                resultado_lote = evento.get("resultados")
-                # Não repassa o done individual, converte em log para não encerrar o stream
-                yield json.dumps({"status": "log", "mensagem": f"Concluído processamento da URL {i}"}) + "\n"
-            else:
-                yield evento_json
-                
-        resultados_totais.append({
-            "url": url,
-            "resultado": resultado_lote
-        })
-        
-    yield json.dumps({"status": "done", "resultados": {
-        "sucesso": True,
-        "total_urls_processadas": total_urls,
-        "detalhes": resultados_totais
-    }}) + "\n"
-    logger.info("Processamento múltiplo finalizado!")
+    logger.info(f"Iniciando registro de {len(urls)} lotes no banco para o usuário {id_usuario}...")
+    ids_gerados = []
+    for url in urls:
+        id_lote = criar_lote_decretos(url, id_usuario)
+        ids_gerados.append(id_lote)
+    return ids_gerados

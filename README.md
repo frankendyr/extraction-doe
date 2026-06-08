@@ -36,9 +36,9 @@ Baixa o PDF da URL informada e retorna uma lista simplificada de todos os decret
 - **Payload:** `{"url_do_diario": "URL_DO_PDF"}`
 - **Retorno:** JSON contendo os nomes dos decretos e a página de cada um.
 
-### 4. `POST /extrair-decretos-lote-por-periodo`
-**Descrição:** Executar esteira de extração de múltiplos diários a partir de uma lista de URLs.
-Processa uma lista de URLs de Diários Oficiais sequencialmente, criando um lote de importação para cada diário e extraindo seus respectivos decretos.
+### 4. `POST /extrair-decretos-em-lote`
+**Descrição:** Registrar múltiplos diários em lote a partir de uma lista de URLs.
+Apenas cria os registros rastreáveis no banco (tabela `lote_decretos`) retornando a lista de IDs de lote gerados. Não executa a extração em si.
 - **Payload:** 
 ```json
 {
@@ -47,6 +47,16 @@ Processa uma lista de URLs de Diários Oficiais sequencialmente, criando um lote
     "http://imagens.seplag.ce.gov.br/PDF/20260508/do20260508p01.pdf"
   ],
   "id_usuario": "SEU_USUARIO"
+}
+```
+
+### 5. `POST /processar-extracao-lote-decretos`
+**Descrição:** Processar a extração profunda de um lote previamente registrado (SSE).
+Recebe um `id_lote`, recupera a URL e o usuário do banco e executa toda a leitura LLM de forma assíncrona, salvando os decretos encontrados.
+- **Payload:** 
+```json
+{
+  "id_lote": 123
 }
 ```
 
@@ -60,13 +70,13 @@ Aqui está um exemplo de código funcional usando Javascript puro (Fetch API):
 
 ```javascript
 async function iniciarProcessamentoEmTempoReal() {
-    const response = await fetch('http://127.0.0.1:8000/extrair-decretos-lote-por-periodo', {
+    const response = await fetch('http://127.0.0.1:8000/processar-extracao-lote-decretos', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream' // Opcional, mas boa prática
         },
-        body: JSON.stringify({ urls: ["SUA_URL_AQUI"], id_usuario: "123" })
+        body: JSON.stringify({ id_lote: 123 })
     });
 
     const reader = response.body.getReader();

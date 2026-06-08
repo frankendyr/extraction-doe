@@ -237,8 +237,8 @@ def criar_lote_decretos(url_fonte_lote: str, usuario: str) -> int:
     try:
         conn, cursor = conectar_db()
         query = """
-            INSERT INTO lote_decretos (url_fonte_lote, usuario, data_importacao)
-            VALUES (%s, %s, NOW())
+            INSERT INTO lote_decretos (url_fonte_lote, usuario, data_importacao, lote_processado)
+            VALUES (%s, %s, NOW(), FALSE)
             RETURNING id;
         """
         cursor.execute(query, (url_fonte_lote, usuario))
@@ -256,3 +256,35 @@ def criar_lote_decretos(url_fonte_lote: str, usuario: str) -> int:
             cursor.close()
         if conn:
             conn.close()
+
+def buscar_url_por_id_lote(id_lote: int) -> tuple[str, str]:
+    """
+    Busca a URL e o usuário associados a um ID de lote na tabela lote_decretos.
+    Retorna uma tupla (url_fonte_lote, usuario).
+    """
+    conn = None
+    cursor = None
+    try:
+        conn, cursor = conectar_db()
+        query = """
+            SELECT url_fonte_lote, usuario 
+            FROM lote_decretos 
+            WHERE id = %s
+            LIMIT 1;
+        """
+        cursor.execute(query, (id_lote,))
+        resultado = cursor.fetchone()
+        
+        if not resultado:
+            raise ValueError(f"Lote com ID {id_lote} não encontrado.")
+            
+        return resultado[0], resultado[1]
+    except psycopg2.Error as e:
+        logger.error(f"Erro ao buscar lote no banco:\n{e}")
+        raise
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
