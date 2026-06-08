@@ -74,14 +74,15 @@ def montar_url(data: str):
         raise HTTPException(status_code=400, detail=resultado)
     return resultado
 
-@app.post("/extrair-decretos-doe-lote", summary="Executar esteira de extração em lote de decretos de uma publicação do DOE com logs em tempo real (SSE)")
-def executar_diario_lote(req: DiarioLoteRequest):
-    """
-    Orquestra o processamento completo de um Diário Oficial em lote.
-    Retorna os logs em tempo real via Server-Sent Events (StreamingResponse).
-    """
-    gerador = executar_esteira_publicacao_doe(req.url_do_diario, req.id_usuario)
-    return StreamingResponse(gerador, media_type="text/event-stream")
+# @app.post("/extrair-decretos-doe-lote", summary="Executar esteira de extração em lote de decretos de uma publicação do DOE com logs em tempo real (SSE)")
+# def executar_diario_lote(req: DiarioLoteRequest):
+#     """
+#     Orquestra o processamento completo de um Diário Oficial em lote.
+#     Retorna os logs em tempo real via Server-Sent Events (StreamingResponse).
+#     """
+#     gerador = executar_esteira_publicacao_doe(req.url_do_diario, req.id_usuario)
+#     return StreamingResponse(gerador, media_type="text/event-stream")
+
 
 @app.post("/extrair-decretos-lote-por-periodo", summary="Executar esteira de extração de múltiplos diários a partir de uma lista de URLs com logs em tempo real (SSE)")
 def executar_diarios_lote_periodo(req: LotePeriodoRequest):

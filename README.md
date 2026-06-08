@@ -36,13 +36,16 @@ Baixa o PDF da URL informada e retorna uma lista simplificada de todos os decret
 - **Payload:** `{"url_do_diario": "URL_DO_PDF"}`
 - **Retorno:** JSON contendo os nomes dos decretos e a página de cada um.
 
-### 4. `POST /extrair-decretos-doe-lote`
-**Descrição:** Executar esteira de extração em lote de decretos de uma publicação do DOE.
-Processa e extrai **todos** os decretos encontrados em um Diário Oficial de uma só vez, criando um lote de importação rastreável via banco de dados.
+### 4. `POST /extrair-decretos-lote-por-periodo`
+**Descrição:** Executar esteira de extração de múltiplos diários a partir de uma lista de URLs.
+Processa uma lista de URLs de Diários Oficiais sequencialmente, criando um lote de importação para cada diário e extraindo seus respectivos decretos.
 - **Payload:** 
 ```json
 {
-  "url_do_diario": "URL_AQUI",
+  "urls": [
+    "http://imagens.seplag.ce.gov.br/PDF/20260506/do20260506p01.pdf",
+    "http://imagens.seplag.ce.gov.br/PDF/20260508/do20260508p01.pdf"
+  ],
   "id_usuario": "SEU_USUARIO"
 }
 ```
@@ -57,13 +60,13 @@ Aqui está um exemplo de código funcional usando Javascript puro (Fetch API):
 
 ```javascript
 async function iniciarProcessamentoEmTempoReal() {
-    const response = await fetch('http://127.0.0.1:8000/extrair-decretos-doe-lote', {
+    const response = await fetch('http://127.0.0.1:8000/extrair-decretos-lote-por-periodo', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream' // Opcional, mas boa prática
         },
-        body: JSON.stringify({ url_do_diario: "SUA_URL_AQUI" })
+        body: JSON.stringify({ urls: ["SUA_URL_AQUI"], id_usuario: "123" })
     });
 
     const reader = response.body.getReader();
