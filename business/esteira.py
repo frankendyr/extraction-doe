@@ -8,7 +8,7 @@ import requests
 import urllib3
 from dotenv import load_dotenv
 from business.minio_business import enviar_imagens_minio
-from doe.esteira_doe import salvar_no_banco, salvar_anexos_no_banco, criar_lote_decretos
+from doe.esteira_doe import salvar_no_banco, salvar_anexos_no_banco, criar_lote_decretos, atualizar_total_decretos_lote
 import google.generativeai as genai
 import logging
 
@@ -1461,10 +1461,13 @@ def executar_esteira_publicacao_doe(url_do_diario: str, id_usuario: str):
         logger.info("Iniciando gravação em lote no PostgreSQL (Desenvolvimento)...")
 
         try:
-            salvar_no_banco(resultado_final)
+            total_inseridos = salvar_no_banco(resultado_final)
             salvar_anexos_no_banco(resultado_final)
             
-            yield json.dumps({"status": "log", "mensagem": "Todos os dados e anexos gravados no banco com sucesso!"}) + "\n"
+            # Atualiza o lote com o total real de decretos salvos (ignorando duplicados)
+            atualizar_total_decretos_lote(id_lote, total_inseridos)
+
+            yield json.dumps({"status": "log", "mensagem": f"Todos os dados ({total_inseridos} inseridos novos) e anexos gravados no banco com sucesso!"}) + "\n"
             logger.info("Todos os dados e anexos foram gravados no banco com sucesso!")
             
             yield json.dumps({"status": "done", "resultado": resultado_final}) + "\n"

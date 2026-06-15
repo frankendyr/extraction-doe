@@ -1,6 +1,9 @@
 import psycopg2
 from doe.db_connection import conectar_db
 import logging
+import json
+import re
+from datetime import datetime
 
 # Configuração básica do logger para a API
 logger = logging.getLogger("ExtratorDOE")
@@ -95,6 +98,8 @@ def salvar_no_banco(resultado_json: dict):
         print(f"   {total_inseridos} novos decreto(s) salvo(s).")
         if total_duplicados > 0:
             print(f"   {total_duplicados} decreto(s) ignorado(s) pois já existiam (Regra UNIQUE).")
+
+        return total_inseridos
 
     except psycopg2.Error as e:
         print(f"\nErro na operação de banco de dados:\n{e}")
@@ -230,18 +235,26 @@ def buscar_decreto_no_banco(numero_decreto: str) -> dict:
 def criar_lote_decretos(url_fonte_lote: str, usuario: str) -> int:
     """
     Cria um registro de lote no banco de dados e retorna o ID gerado.
+    Extrai a data do diário a partir da URL para a coluna periodo_importacao.
     """
     logger.info(f"Criando registro de lote para o usuário {usuario}...")
+    
+    # Extração da data pela URL (ex: .../PDF/20260422/do...)
+    periodo_importacao = None
+    match = re.search(r'/(\d{4})(\d{2})(\d{2})/', url_fonte_lote)
+    if match:
+        periodo_importacao = f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+
     conn = None
     cursor = None
     try:
         conn, cursor = conectar_db()
         query = """
-            INSERT INTO lote_decretos (url_fonte_lote, usuario, data_importacao)
-            VALUES (%s, %s, NOW())
+            INSERT INTO lote_decretos (url_fonte_lote, usuario, data_importacao, periodo_importacao)
+            VALUES (%s, %s, NOW(), %s)
             RETURNING id;
         """
-        cursor.execute(query, (url_fonte_lote, usuario))
+        cursor.execute(query, (url_fonte_lote, usuario, periodo_importacao))
         id_lote = cursor.fetchone()[0]
         conn.commit()
         logger.info(f"Lote {id_lote} criado com sucesso!")
@@ -251,6 +264,28 @@ def criar_lote_decretos(url_fonte_lote: str, usuario: str) -> int:
         if conn:
             conn.rollback()
         raise
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+def atualizar_total_decretos_lote(id_lote: int, total_decretos: int):
+    """
+    Atualiza a quantidade de decretos que foram efetivamente extraídos e inseridos no banco.
+    """
+    conn = None
+    cursor = None
+    try:
+        conn, cursor = conectar_db()
+        query = "UPDATE lote_decretos SET decretos_extraidos = %s WHERE id = %s;"
+        cursor.execute(query, (total_decretos, id_lote))
+        conn.commit()
+        logger.info(f"Lote {id_lote} atualizado: {total_decretos} decretos extraídos.")
+    except psycopg2.Error as e:
+        logger.error(f"Erro ao atualizar total de decretos do lote {id_lote}:\n{e}")
+        if conn:
+            conn.rollback()
     finally:
         if cursor:
             cursor.close()
