@@ -1461,8 +1461,8 @@ def executar_esteira_publicacao_doe(url_do_diario: str, id_usuario: str):
         logger.info("Iniciando gravação em lote no PostgreSQL (Desenvolvimento)...")
 
         try:
-            total_inseridos = salvar_no_banco(resultado_final)
-            salvar_anexos_no_banco(resultado_final)
+            total_inseridos = salvar_no_banco(resultado_final, id_lote)
+            salvar_anexos_no_banco(resultado_final, id_lote)
             
             # Atualiza o lote com o total real de decretos salvos (ignorando duplicados)
             atualizar_total_decretos_lote(id_lote, total_inseridos)

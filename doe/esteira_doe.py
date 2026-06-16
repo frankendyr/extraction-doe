@@ -14,7 +14,7 @@ handler.setFormatter(logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)
 if not logger.handlers:
     logger.addHandler(handler)
 
-def salvar_no_banco(resultado_json: dict):
+def salvar_no_banco(resultado_json: dict, id_lote):
     """
     Realiza a conexão com o banco de homologação usando a fábrica central,
     calcula o próximo index e insere os dados extraídos usando a regra contra duplicidade.
@@ -39,16 +39,16 @@ def salvar_no_banco(resultado_json: dict):
         ultimo_index = cursor.fetchone()[0]
 
         # O PULO DO GATO (ON CONFLICT): O PostgreSQL lida com a duplicidade sozinho!
-        query_insert = """
-            INSERT INTO documento_extraido (
-                index, id_nome_decreto, nup, viproc, pagina, orgao_entidade_esfera,
-                pi_entes_programas, pi_pessoas_fisicas, pi_pessoas_juridicas,
-                pi_municipios, responsaveis, data_diario, url, original, anexos,
-                arquivo_origem, id_tipo, id_documento, processado, data_criacao
-            ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-            ) ON CONFLICT (id_documento) DO NOTHING;
-        """
+        # query_insert = """
+        #     INSERT INTO documento_extraido (
+        #         index, id_nome_decreto, nup, viproc, pagina, orgao_entidade_esfera,
+        #         pi_entes_programas, pi_pessoas_fisicas, pi_pessoas_juridicas,
+        #         pi_municipios, responsaveis, data_diario, url, original, anexos,
+        #         arquivo_origem, id_tipo, id_documento, processado, data_criacao
+        #     ) VALUES (
+        #         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        #     ) ON CONFLICT (id_documento) DO NOTHING;
+        # """
         
         query_insert = """
             INSERT INTO documento_extraido (
@@ -89,7 +89,7 @@ def salvar_no_banco(resultado_json: dict):
                 meta["arquivo_origem"],
                 meta.get("id_tipo", 1),
                 meta["id_documento"],
-                meta["id_lote"],
+                id_lote,
                 meta.get("processado", True),
                 meta["data_criacao"]
             )
@@ -124,7 +124,7 @@ def salvar_no_banco(resultado_json: dict):
         if conn:
             conn.close()
 
-def salvar_anexos_no_banco(resultado_json: dict):
+def salvar_anexos_no_banco(resultado_json: dict, id_lote):
     """
     Varre o JSON final em busca de links de imagens no MinIO e
     insere os metadados na tabela documento_extraido_anexo usando a conexão central.
@@ -146,7 +146,7 @@ def salvar_anexos_no_banco(resultado_json: dict):
             INSERT INTO documento_extraido_anexo (
                 id, id_documento, tipo_anexo, anexo, sequencia_anexo, processado, data_criacao
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s
             );
         """
 
@@ -172,7 +172,8 @@ def salvar_anexos_no_banco(resultado_json: dict):
                     link_minio,
                     sequencia,
                     False,
-                    data_criacao
+                    data_criacao,
+                    id_lote
                 )
 
                 cursor.execute(query_insert, valores)
