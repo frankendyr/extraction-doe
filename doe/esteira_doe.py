@@ -46,6 +46,17 @@ def salvar_no_banco(resultado_json: dict):
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             ) ON CONFLICT (id_documento) DO NOTHING;
         """
+        
+        query_insert = """
+            INSERT INTO documento_extraido (
+                index, id_nome_decreto, nup, viproc, pagina, orgao_entidade_esfera,
+                pi_entes_programas, pi_pessoas_fisicas, pi_pessoas_juridicas,
+                pi_municipios, responsaveis, data_diario, url, original, anexos,
+                arquivo_origem, id_tipo, id_documento, id_lote, processado, data_criacao
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            ) ON CONFLICT (id_documento, id_lote) DO NOTHING;
+        """
 
         total_inseridos = 0
         total_duplicados = 0
@@ -75,6 +86,7 @@ def salvar_no_banco(resultado_json: dict):
                 meta["arquivo_origem"],
                 meta.get("id_tipo", 1),
                 meta["id_documento"],
+                meta["id_lote"],
                 meta.get("processado", True),
                 meta["data_criacao"]
             )
