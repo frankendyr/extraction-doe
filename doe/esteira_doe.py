@@ -144,7 +144,7 @@ def salvar_anexos_no_banco(resultado_json: dict, id_lote):
 
         query_insert = """
             INSERT INTO documento_extraido_anexo (
-                id, id_documento, tipo_anexo, anexo, sequencia_anexo, processado, data_criacao
+                id, id_documento, tipo_anexo, anexo, sequencia_anexo, processado, data_criacao, id_lote
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s
             );
