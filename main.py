@@ -74,7 +74,7 @@ def montar_url(data: str):
         raise HTTPException(status_code=400, detail=resultado)
     return resultado
 
-@app.post("/extrair-decretos-doe-lote", summary="Executar esteira de extração em lote de decretos de uma publicação do DOE com logs em tempo real (SSE)")
+@app.post("/extrair-decretos-doe-lote", summary="Executar esteira de extração em lote de decretos de uma publicação do DOE com logs em tempo real (SSE)", include_in_schema=False)
 def executar_diario_lote(req: DiarioLoteRequest):
     """
     Orquestra o processamento completo de um Diário Oficial em lote.

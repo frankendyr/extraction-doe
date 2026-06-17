@@ -8,7 +8,7 @@ import requests
 import urllib3
 from dotenv import load_dotenv
 from business.minio_business import enviar_imagens_minio
-from doe.esteira_doe import salvar_no_banco, salvar_anexos_no_banco, criar_lote_decretos, atualizar_total_decretos_lote
+from doe.esteira_doe import salvar_no_banco, salvar_anexos_no_banco, criar_lote_decretos, atualizar_total_decretos_lote, marcar_lote_vazio_processado
 import google.generativeai as genai
 import logging
 
@@ -291,10 +291,14 @@ def limpar_texto_pagina_um(texto_bruto):
             quebrou_padrao = False
             ultimo_char = linha_limpa[-1] if linha_limpa else ""
 
-            # Condições de quebra: Ponto final, números ou inícios óbvios de atos normativos
+            # Condições de quebra: Ponto final, números, balas ou inícios óbvios de atos normativos
             if ultimo_char == '.':
                 quebrou_padrao = True
             elif any(c.isdigit() for c in linha_limpa):
+                quebrou_padrao = True
+            elif linha_limpa.startswith(('•', '-')):
+                quebrou_padrao = True
+            elif re.match(r'^[IVXLC]+\s*-', linha_upper):
                 quebrou_padrao = True
             elif linha_upper in ["PODER EXECUTIVO", "GOVERNADORIA"] or \
                  linha_upper.startswith("DECRETO") or \
@@ -1451,6 +1455,10 @@ def executar_esteira_publicacao_doe(url_do_diario: str, id_usuario: str):
         if resultado_final.get("total_decretos") == 0:
             yield json.dumps({"status": "log", "mensagem": "Fluxo interrompido limpo: Não há dados para processar."}) + "\n"
             logger.info("Fluxo interrompido limpo: Não há dados para processar ou salvar no banco.")
+            
+            # Atualiza o status do lote para processado quando não há decretos
+            marcar_lote_vazio_processado(id_lote)
+            
             yield json.dumps({"status": "done", "resultado": resultado_final}) + "\n"
             return
 

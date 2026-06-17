@@ -304,3 +304,26 @@ def atualizar_total_decretos_lote(id_lote: int, total_decretos: int):
             cursor.close()
         if conn:
             conn.close()
+
+def marcar_lote_vazio_processado(id_lote: int):
+    """
+    Quando um diário não contém nenhum decreto, esta função marca o lote como processado
+    e preenche os decretos extraídos com 0, para que ele não fique 'travado' no banco.
+    """
+    conn = None
+    cursor = None
+    try:
+        conn, cursor = conectar_db()
+        query = "UPDATE lote_decretos SET lote_processado = TRUE, decretos_extraidos = 0 WHERE id = %s;"
+        cursor.execute(query, (id_lote,))
+        conn.commit()
+        logger.info(f"Lote {id_lote} atualizado: vazio e processado.")
+    except psycopg2.Error as e:
+        logger.error(f"Erro ao atualizar lote {id_lote} vazio:\n{e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()

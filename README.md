@@ -36,18 +36,7 @@ Baixa o PDF da URL informada e retorna uma lista simplificada de todos os decret
 - **Payload:** `{"url_do_diario": "URL_DO_PDF"}`
 - **Retorno:** JSON contendo os nomes dos decretos e a página de cada um.
 
-### 4. `POST /extrair-decretos-doe-lote`
-**Descrição:** Executar esteira de extração em lote de decretos de uma publicação do DOE.
-Processa e extrai **todos** os decretos encontrados em um Diário Oficial de uma só vez, criando um lote de importação rastreável via banco de dados.
-- **Payload:** 
-```json
-{
-  "url_do_diario": "URL_AQUI",
-  "id_usuario": "SEU_USUARIO"
-}
-```
 
----
 
 ## 💻 Como usar o SSE no Frontend (Javascript / React / Vue)
 
@@ -57,13 +46,13 @@ Aqui está um exemplo de código funcional usando Javascript puro (Fetch API):
 
 ```javascript
 async function iniciarProcessamentoEmTempoReal() {
-    const response = await fetch('http://127.0.0.1:8000/extrair-decretos-doe-lote', {
+    const response = await fetch('http://127.0.0.1:8000/extrair-decretos-lote-por-periodo', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream' // Opcional, mas boa prática
         },
-        body: JSON.stringify({ url_do_diario: "SUA_URL_AQUI" })
+        body: JSON.stringify({ urls: ["URL_1", "URL_2"], id_usuario: "SEU_ID" })
     });
 
     const reader = response.body.getReader();
