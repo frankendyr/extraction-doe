@@ -2,9 +2,9 @@ import os
 import re
 import json
 import time
+import requests
 from datetime import datetime
 import fitz
-import requests
 import urllib3
 from dotenv import load_dotenv
 from business.minio_business import enviar_imagens_minio
@@ -13,6 +13,37 @@ import google.generativeai as genai
 import logging
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Configuração de Logs LLM
+URL_LOGS = os.getenv("URL_LOGS", "http://18.206.213.53:8005/logs_processamento")
+
+def enviar_log_llm(id_documento, modelo, tokens_entrada, tokens_saida, total_tokens, prompt, response_text, rotina, usuario, id_prompt):
+    """
+    Envia as estatísticas de uso da LLM para a API central de logs.
+    Utiliza timeout curto e trata exceções para não travar a esteira principal.
+    """
+    if not URL_LOGS:
+        return
+        
+    payload = {
+        "id_documento": str(id_documento),
+        "modelo": str(modelo),
+        "tokens_entrada": tokens_entrada,
+        "tokens_saida": tokens_saida,
+        "total_tokens": total_tokens,
+        "prompt": prompt,
+        "response": response_text,
+        "rotina": rotina,
+        "usuario": usuario,
+        "id_prompt": id_prompt
+    }
+    
+    try:
+        response_api = requests.post(URL_LOGS, json=payload, timeout=5)
+        if response_api.status_code not in [200, 201]:
+            logger.warning(f"Erro ao salvar log da LLM: HTTP {response_api.status_code} - {response_api.text}")
+    except Exception as e:
+        logger.warning(f"Falha na comunicação com a API de logs da LLM: {e}")
 
 try:
     # Carrega as variáveis do arquivo .env (se existir)
@@ -409,7 +440,7 @@ def separar_decreto_dos_anexos(texto: str) -> tuple[str, str]:
     # Caso a busca não detecte anexos, retorna o texto integral como corpo principal
     return texto.strip(), "Sem anexos"
 
-def identificar_tabelas_llm(texto: str, nome_modelo: str) -> list:
+def identificar_tabelas_llm(texto: str, nome_modelo: str, id_usuario: str, id_documento: str, rotina: str, id_prompt: str) -> list:
     """
     Envia um trecho de texto para a LLM identificar estruturas tabulares achatadas.
     Retorna uma lista de dicionários contendo o texto bruto e a tabela reconstruída em Markdown.
@@ -957,6 +988,28 @@ def identificar_tabelas_llm(texto: str, nome_modelo: str) -> list:
                 prompt,
                 generation_config={"response_mime_type": "application/json"}
             )
+            
+            # Extrai contagem de tokens para o Log
+            try:
+                tokens_in = response.usage_metadata.prompt_token_count
+                tokens_out = response.usage_metadata.candidates_token_count
+                tokens_total = response.usage_metadata.total_token_count
+                
+                enviar_log_llm(
+                    id_documento=id_documento,
+                    modelo=nome_modelo,
+                    tokens_entrada=tokens_in,
+                    tokens_saida=tokens_out,
+                    total_tokens=tokens_total,
+                    prompt=prompt,
+                    response_text=response.text,
+                    rotina=rotina,
+                    usuario=id_usuario,
+                    id_prompt=id_prompt
+                )
+            except Exception as e:
+                logger.warning(f"Não foi possível extrair os tokens de uso: {e}")
+
             return json.loads(response.text)
         except Exception:
             time.sleep(1)
@@ -1012,7 +1065,7 @@ def substituir_tabelas_robusto(texto_original_completo: str, tabelas_json: list)
 
     return texto_final
 
-def processar_texto_com_llm(nome_parte: str, texto: str, modelo: str, limite_chars: int = 40000) -> str:
+def processar_texto_com_llm(nome_parte: str, texto: str, modelo: str, id_usuario: str, id_documento: str, limite_chars: int = 40000) -> str:
     """
     Orquestra o envio do texto para análise da LLM e a posterior injeção das tabelas.
     Ignora a requisição e retorna o texto original caso o tamanho ultrapasse o limite
@@ -1028,7 +1081,14 @@ def processar_texto_com_llm(nome_parte: str, texto: str, modelo: str, limite_cha
         return texto
 
     # Delega a identificação para o modelo
-    lista_substituicoes = identificar_tabelas_llm(texto, modelo)
+    lista_substituicoes = identificar_tabelas_llm(
+        texto, 
+        modelo, 
+        id_usuario=id_usuario, 
+        id_documento=id_documento, 
+        rotina=f"Identificação de Tabelas - {nome_parte}", 
+        id_prompt="4"
+    )
 
     # Injeta o Markdown se houver tabelas encontradas
     if lista_substituicoes:
@@ -1036,7 +1096,7 @@ def processar_texto_com_llm(nome_parte: str, texto: str, modelo: str, limite_cha
 
     return texto
 
-def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str) -> dict:
+def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str, id_usuario: str, id_documento: str) -> dict:
     """
     Usa a LLM para ler o decreto e extrair os metadados dinâmicos do texto.
     Força a saída em formato JSON estrito para integração segura na API.
@@ -1071,6 +1131,28 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str) -> dict:
                 # Garante que a IA não mande Markdown ou texto solto, apenas o JSON puro
                 generation_config={"response_mime_type": "application/json"}
             )
+            
+            # Extrai contagem de tokens para o Log
+            try:
+                tokens_in = response.usage_metadata.prompt_token_count
+                tokens_out = response.usage_metadata.candidates_token_count
+                tokens_total = response.usage_metadata.total_token_count
+                
+                enviar_log_llm(
+                    id_documento=id_documento,
+                    modelo=nome_modelo,
+                    tokens_entrada=tokens_in,
+                    tokens_saida=tokens_out,
+                    total_tokens=tokens_total,
+                    prompt=prompt,
+                    response_text=response.text,
+                    rotina="Extração de Metadados",
+                    usuario=id_usuario,
+                    id_prompt="5"
+                )
+            except Exception as e:
+                logger.warning(f"Não foi possível extrair os tokens de uso (metadados): {e}")
+
             return json.loads(response.text)
         except Exception:
             time.sleep(1)
@@ -1292,7 +1374,7 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str) -> dict:
         "dados": resultados_finais
     }
 
-def processar_diario_em_lote(url_alvo: str, id_lote: int = None):
+def processar_diario_em_lote(url_alvo: str, id_lote: int = None, id_usuario: str = None):
     yield json.dumps({"status": "log", "mensagem": "Baixando o Diário Oficial da URL..."}) + "\n"
     logger.info("Baixando o Diário Oficial da URL...")
     arquivo_doe = baixar_doe(url_alvo)
@@ -1367,22 +1449,44 @@ def processar_diario_em_lote(url_alvo: str, id_lote: int = None):
             texto_limpo = limpar_texto_demais_paginas(texto_bruto["texto"])
 
         decreto_principal, anexos = separar_decreto_dos_anexos(texto_limpo)
+        
+        # Constrói o ID do documento antecipadamente para o Log da LLM
+        numero_sem_ponto = str(num_decreto).replace(".", "")
+        id_documento_gerado = f"1_{numero_sem_ponto}_{data_id_doc}" if data_id_doc else f"1_{numero_sem_ponto}"
 
         yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Analisando tabelas do corpo principal..."}) + "\n"
         logger.info(f"[{num_decreto}] Analisando tabelas do corpo principal...")
-        decreto_principal_formatado = processar_texto_com_llm("Corpo do Decreto", decreto_principal, nome_modelo_escolhido, limite_chars=40000)
+        decreto_principal_formatado = processar_texto_com_llm(
+            "Corpo do Decreto", 
+            decreto_principal, 
+            nome_modelo_escolhido, 
+            id_usuario=id_usuario,
+            id_documento=id_documento_gerado,
+            limite_chars=40000
+        )
 
         yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Analisando tabelas dos anexos..."}) + "\n"
         logger.info(f"[{num_decreto}] Analisando tabelas dos anexos...")
-        anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=10000)
+        anexos_formatados = processar_texto_com_llm(
+            "Anexos do Decreto", 
+            anexos, 
+            nome_modelo_escolhido, 
+            id_usuario=id_usuario,
+            id_documento=id_documento_gerado,
+            limite_chars=10000
+        )
 
         yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Extraindo metadados inteligentes..."}) + "\n"
         logger.info(f"[{num_decreto}] Extraindo metadados inteligentes...")
-        metadados_llm = extrair_metadados_com_llm(decreto_principal, nome_modelo_escolhido)
+        metadados_llm = extrair_metadados_com_llm(
+            decreto_principal, 
+            nome_modelo_escolhido,
+            id_usuario=id_usuario,
+            id_documento=id_documento_gerado
+        )
 
         url_direta = f"{url_alvo}#page={pagina_doe}"
         timestamp_atual = str(datetime.now())
-        numero_sem_ponto = str(num_decreto).replace(".", "")
 
         metadados_completos = {
             "id_nome_decreto": metadados_llm.get("id", f"DECRETO Nº {num_decreto}"),
@@ -1399,7 +1503,7 @@ def processar_diario_em_lote(url_alvo: str, id_lote: int = None):
             "url": url_direta,
             "arquivo_origem": str(id_lote) if id_lote else url_alvo,
             "id_tipo": 1,
-            "id_documento": f"1_{numero_sem_ponto}_{data_id_doc}",
+            "id_documento": id_documento_gerado,
             "processado": False,
             "data_criacao": timestamp_atual,
             "links_imagens": links_imagens
@@ -1441,7 +1545,7 @@ def executar_esteira_publicacao_doe(url_do_diario: str, id_usuario: str):
 
     resultado_final = None
 
-    for evento in processar_diario_em_lote(url_do_diario, id_lote):
+    for evento in processar_diario_em_lote(url_do_diario, id_lote, id_usuario):
         try:
             evento_dict = json.loads(evento.strip())
             if evento_dict.get("status") == "done":
@@ -1489,7 +1593,7 @@ def executar_esteira_publicacao_doe(url_do_diario: str, id_usuario: str):
         yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
         logger.error(msg_erro)
 
-def processar_diario_unico(url_alvo: str, numero_alvo: str):
+def processar_diario_unico(url_alvo: str, numero_alvo: str, id_usuario: str = None):
     yield json.dumps({"status": "log", "mensagem": f"Iniciando processamento do Decreto {numero_alvo}"}) + "\n"
     logger.info(f"Iniciando processamento do Decreto {numero_alvo}")
     
@@ -1558,18 +1662,40 @@ def processar_diario_unico(url_alvo: str, numero_alvo: str):
 
     decreto_principal, anexos = separar_decreto_dos_anexos(texto_limpo)
 
+    # Constrói o ID do documento antecipadamente para o Log da LLM
+    numero_sem_ponto = str(numero_alvo).replace(".", "")
+    id_documento_gerado = f"1_{numero_sem_ponto}_{data_id_doc}" if data_id_doc else f"1_{numero_sem_ponto}"
+
     yield json.dumps({"status": "log", "mensagem": "Analisando tabelas do corpo principal e anexos..."}) + "\n"
     logger.info("Analisando tabelas do corpo principal e anexos...")
-    decreto_principal_formatado = processar_texto_com_llm("Corpo do Decreto", decreto_principal, nome_modelo_escolhido, limite_chars=40000)
-    anexos_formatados = processar_texto_com_llm("Anexos do Decreto", anexos, nome_modelo_escolhido, limite_chars=10000)
+    decreto_principal_formatado = processar_texto_com_llm(
+        "Corpo do Decreto", 
+        decreto_principal, 
+        nome_modelo_escolhido, 
+        id_usuario=id_usuario,
+        id_documento=id_documento_gerado,
+        limite_chars=40000
+    )
+    anexos_formatados = processar_texto_com_llm(
+        "Anexos do Decreto", 
+        anexos, 
+        nome_modelo_escolhido, 
+        id_usuario=id_usuario,
+        id_documento=id_documento_gerado,
+        limite_chars=10000
+    )
 
     yield json.dumps({"status": "log", "mensagem": "Extraindo metadados inteligentes..."}) + "\n"
     logger.info("Extraindo metadados inteligentes...")
-    metadados_llm = extrair_metadados_com_llm(decreto_principal, nome_modelo_escolhido)
+    metadados_llm = extrair_metadados_com_llm(
+        decreto_principal, 
+        nome_modelo_escolhido,
+        id_usuario=id_usuario,
+        id_documento=id_documento_gerado
+    )
 
     url_direta = f"{url_alvo}#page={pagina_doe}"
     timestamp_atual = str(datetime.now())
-    numero_sem_ponto = str(numero_alvo).replace(".", "")
 
     metadados_completos = {
         "id_nome_decreto": metadados_llm.get("id", f"DECRETO Nº {numero_alvo}"),
@@ -1586,7 +1712,7 @@ def processar_diario_unico(url_alvo: str, numero_alvo: str):
         "url": url_direta,
         "arquivo_origem": url_alvo,
         "id_tipo": 1,
-        "id_documento": f"1_{numero_sem_ponto}_{data_id_doc}",
+        "id_documento": id_documento_gerado,
         "processado": False,
         "data_criacao": timestamp_atual,
         "links_imagens": links_imagens
@@ -1609,7 +1735,7 @@ def processar_diario_unico(url_alvo: str, numero_alvo: str):
         "dados": [pacote_do_decreto]
     }}) + "\n"
 
-def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str):
+def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str, id_usuario: str = None):
     yield json.dumps({"status": "log", "mensagem": f"INICIANDO ESTEIRA PARA O DECRETO: {numero_do_decreto}"}) + "\n"
     logger.info("================================================================")
     logger.info(f"INICIANDO ESTEIRA PARA O DECRETO: {numero_do_decreto}")
@@ -1618,7 +1744,7 @@ def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str):
 
     resultado_final = None
 
-    for evento in processar_diario_unico(url_do_diario, numero_do_decreto):
+    for evento in processar_diario_unico(url_do_diario, numero_do_decreto, id_usuario):
         try:
             evento_dict = json.loads(evento.strip())
             if evento_dict.get("status") == "done":
