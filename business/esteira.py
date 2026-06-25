@@ -1406,6 +1406,7 @@ def processar_diario_em_lote(url_alvo: str, id_lote: int = None, id_usuario: str
         }}) + "\n"
         return
 
+    
     yield json.dumps({"status": "log", "mensagem": f"Encontrado(s) {total_decretos} decreto(s)! Iniciando processamento em lote..."}) + "\n"
     logger.info(f"Encontrado(s) {total_decretos} decreto(s)! Iniciando processamento em lote...")
 
