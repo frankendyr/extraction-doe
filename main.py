@@ -22,9 +22,9 @@ app.add_middleware(
 )
 
 # Modelos Pydantic para as requisições
-# class DecretoUnicoRequest(BaseModel):
-#     url_do_diario: str
-#     numero_do_decreto: str
+class DecretoUnicoRequest(BaseModel):
+    url_do_diario: str
+    numero_do_decreto: str
 
 class DiarioLoteRequest(BaseModel):
     url_do_diario: str
@@ -42,15 +42,12 @@ class LotePeriodoRequest(BaseModel):
     id_usuario: str
 
 
-# @app.post("/extrair-decreto-unico", summary="Executa a extração do texto de um único decreto com logs em tempo real (SSE)")
-# def executar_decreto_unico(req: DecretoUnicoRequest):
-#     """
-#     Aciona a extração de um único decreto e persiste no banco de dados.
-#     Retorna os logs em tempo real via Server-Sent Events (StreamingResponse).
-#     """
-#     gerador = executar_esteira_decreto_unico(req.url_do_diario, req.numero_do_decreto)
-#     return StreamingResponse(gerador, media_type="text/event-stream")
+from business.esteira import executar_teste_visual
 
+@app.post("/teste-decreto-visual", summary="Executa a extração em tempo real para visualização em tela, sem gravar no banco")
+def teste_decreto_visual(req: DecretoUnicoRequest):
+    gerador = executar_teste_visual(req.url_do_diario, req.numero_do_decreto)
+    return StreamingResponse(gerador, media_type="text/event-stream")
 
 @app.post("/listar-urls-decretos-por-periodo", summary="Varredura de URLs de Diários Oficiais que possuem publicações de decretos")
 def varredura_urls(req: VarreduraRequest):

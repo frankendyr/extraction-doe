@@ -87,6 +87,18 @@ def baixar_doe(url):
 
     except requests.exceptions.RequestException:
         return None
+def is_linha_anterior_valida(linha: str) -> bool:
+    if not linha: return False
+    linha_upper = linha.upper()
+    return (
+        linha_upper == "PODER EXECUTIVO" or 
+        bool(re.match(r"^[\s\*]{3,}$", linha)) or
+        "DIÁRIO OFICIAL" in linha_upper or
+        "SÉRIE" in linha_upper or
+        "FORTALEZA" in linha_upper or
+        "ANO" in linha_upper or
+        linha_upper.isdigit()
+    )
 
 def listar_decretos_doe(pdf_bytes: bytes) -> list:
     """
@@ -102,6 +114,7 @@ def listar_decretos_doe(pdf_bytes: bytes) -> list:
     molde_decreto = re.compile(padrao_regex, re.IGNORECASE)
 
     dentro_do_poder_executivo = False
+    linha_anterior_valida = ""
 
     for num_pagina in range(len(doc)):
         pagina = doc.load_page(num_pagina)
@@ -124,10 +137,14 @@ def listar_decretos_doe(pdf_bytes: bytes) -> list:
             
             if dentro_do_poder_executivo:
                 if molde_decreto.match(linha_limpa):
-                    decretos_encontrados.append({
-                        "decreto": " ".join(linha_limpa.split()),
-                        "pagina": num_pagina + 1
-                    })
+                    # Validação de Falso Positivo: Exige PODER EXECUTIVO, asteriscos ou cabeçalho
+                    if is_linha_anterior_valida(linha_anterior_valida):
+                        decretos_encontrados.append({
+                            "decreto": " ".join(linha_limpa.split()),
+                            "pagina": num_pagina + 1
+                        })
+            
+            linha_anterior_valida = linha_limpa
 
     doc.close()
     return decretos_encontrados
@@ -144,14 +161,22 @@ def contem_decreto_doe(pdf_bytes: bytes, numero_decreto: str) -> bool:
     padrao_regex = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}\s*,\s*de\s+\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
     molde_decreto_especifico = re.compile(padrao_regex, re.IGNORECASE)
 
+    linha_anterior_valida = ""
+
     for num_pagina in range(len(doc)):
         pagina = doc.load_page(num_pagina)
         texto_pagina = pagina.get_text("text")
 
         for linha in texto_pagina.splitlines():
-            if molde_decreto_especifico.match(linha):
-                doc.close()
-                return True
+            linha_limpa = linha.strip()
+            if not linha_limpa: continue
+            
+            if molde_decreto_especifico.match(linha_limpa):
+                if is_linha_anterior_valida(linha_anterior_valida):
+                    doc.close()
+                    return True
+            
+            linha_anterior_valida = linha_limpa
 
     doc.close()
     return False
@@ -199,6 +224,7 @@ def extrair_texto_bruto_decreto(pdf_bytes, numero_decreto):
     dentro_do_decreto = False
     texto_extraido = []
     imagens_encontradas = []
+    linha_anterior_valida = ""
 
     for num_pagina in range(len(doc)):
         pagina = doc.load_page(num_pagina)
@@ -235,8 +261,9 @@ def extrair_texto_bruto_decreto(pdf_bytes, numero_decreto):
 
                     if not dentro_do_decreto:
                         if molde_inicio.match(linha_limpa):
-                            dentro_do_decreto = True
-                            texto_extraido.append(linha_limpa)
+                            if is_linha_anterior_valida(linha_anterior_valida):
+                                dentro_do_decreto = True
+                                texto_extraido.append(linha_limpa)
                     else:
                         # Lógica original devidamente restaurada!
                         if molde_fim_asteriscos.match(linha_limpa) or linha_limpa == "GOVERNADORIA":
@@ -244,6 +271,8 @@ def extrair_texto_bruto_decreto(pdf_bytes, numero_decreto):
                             break
 
                         texto_extraido.append(linha_limpa)
+                    
+                    linha_anterior_valida = linha_limpa
 
             if not dentro_do_decreto and len(texto_extraido) > 0:
                 break
@@ -303,18 +332,16 @@ def limpar_texto_pagina_um(texto_bruto):
         tem_outros = "SÉRIE" in linha_upper or "ANO" in linha_upper or "FORTALEZA" in linha_upper
 
         if tem_diario and tem_outros:
-            numero_pagina = ""
             if len(linhas_limpas) > 0 and linhas_limpas[-1].strip().isdigit():
-                numero_pagina = linhas_limpas.pop().strip()
-
-            # Ativa a exclusão do secretariado ao identificar o cabeçalho da página 2
-            if numero_pagina == "2":
-                limpando_secretariado = True
-                buffer_linhas = []
-
+                linhas_limpas.pop()
             continue
 
         # --- 2. LÓGICA DO SECRETARIADO ---
+        if linha_limpa in ["Governador", "GOVERNADOR"]:
+            limpando_secretariado = True
+            buffer_linhas = []
+            continue
+
         if limpando_secretariado:
             if not linha_limpa:
                 continue
@@ -1817,3 +1844,79 @@ def executar_multiplos_lotes_doe(urls: list, id_usuario: str):
         "detalhes": resultados_totais
     }}) + "\n"
     logger.info("Processamento múltiplo finalizado!")
+
+def executar_teste_visual(url_alvo: str, num_decreto: str):
+    """
+    Simula a exata sequência de extração de um decreto (da esteira em lote)
+    para visualização em tela, sem gravar no banco de dados.
+    """
+    import os
+    import sys
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    nome_modelo_escolhido = os.getenv("LLM_MODEL", "gemini-2.5-flash")
+
+    yield json.dumps({"status": "log", "mensagem": "Iniciando teste visual... Baixando o Diário Oficial..."}) + "\n"
+    logger.info(f"[{num_decreto}] Iniciando teste visual... Baixando o Diário Oficial...")
+    arquivo_doe = baixar_doe(url_alvo)
+
+    if not arquivo_doe:
+        logger.error("Falha crítica ao baixar o PDF.")
+        yield json.dumps({"status": "error", "mensagem": "Falha ao baixar o PDF."}) + "\n"
+        return
+
+    yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Extraindo texto bruto..."}) + "\n"
+    logger.info(f"[{num_decreto}] Extraindo texto bruto...")
+    texto_bruto = extrair_texto_bruto_decreto(arquivo_doe, num_decreto)
+
+    if not texto_bruto["sucesso"]:
+        yield json.dumps({"status": "error", "mensagem": f"Falha ao extrair texto bruto do Decreto {num_decreto}."}) + "\n"
+        return
+
+    yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Verificando primeira página..."}) + "\n"
+    is_pagina_um = verificar_decreto_primeira_pagina(arquivo_doe, num_decreto)
+
+    yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Limpando sujeiras e separando anexos..."}) + "\n"
+    logger.info(f"[{num_decreto}] Limpando sujeiras e separando anexos...")
+
+    if is_pagina_um:
+        texto_limpo = limpar_texto_pagina_um(texto_bruto["texto"])
+    else:
+        texto_limpo = limpar_texto_demais_paginas(texto_bruto["texto"])
+
+    decreto_principal, anexos = separar_decreto_dos_anexos(texto_limpo)
+    
+    yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Analisando tabelas do corpo principal com IA..."}) + "\n"
+    logger.info(f"[{num_decreto}] Analisando tabelas do corpo principal...")
+    decreto_principal_formatado = processar_texto_com_llm(
+        "Corpo do Decreto", 
+        decreto_principal, 
+        nome_modelo_escolhido, 
+        id_usuario="teste_visual",
+        id_documento=num_decreto,
+        limite_chars=40000
+    )
+
+    yield json.dumps({"status": "log", "mensagem": f"[{num_decreto}] Analisando tabelas dos anexos com IA..."}) + "\n"
+    logger.info(f"[{num_decreto}] Analisando tabelas dos anexos...")
+    anexos_formatados = processar_texto_com_llm(
+        "Anexos do Decreto", 
+        anexos, 
+        nome_modelo_escolhido, 
+        id_usuario="teste_visual",
+        id_documento=num_decreto,
+        limite_chars=10000
+    )
+
+    # Não grava no banco! Apenas finaliza e envia para a tela
+    yield json.dumps({
+        "status": "done",
+        "resultados": {
+            "sucesso": True,
+            "corpo_formatado": decreto_principal_formatado,
+            "anexos_formatados": anexos_formatados,
+            "corpo_cru": decreto_principal,
+            "anexos_cru": anexos
+        }
+    }) + "\n"
