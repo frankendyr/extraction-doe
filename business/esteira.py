@@ -1253,7 +1253,7 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str, id_usuario: 
     numero_sem_ponto = str(numero_alvo).replace(".", "")
 
     metadados_completos = {
-        "id_nome_decreto": metadados_llm.get("id", f"DECRETO Nº {numero_alvo}"),
+        "id_nome_decreto": f"DECRETO Nº {numero_alvo}",
         "nup": metadados_llm.get("nup", []),
         "viproc": None,
         "pagina": str(pagina_doe),
@@ -1363,7 +1363,7 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str, id_usuario: 
         numero_sem_ponto = str(num_decreto).replace(".", "")
 
         metadados_completos = {
-            "id_nome_decreto": metadados_llm.get("id", f"DECRETO Nº {num_decreto}"),
+            "id_nome_decreto": f"DECRETO Nº {num_decreto}",
             "nup": metadados_llm.get("nup", []),
             "viproc": None,
             "pagina": str(pagina_doe),
@@ -1517,7 +1517,7 @@ def processar_diario_em_lote(url_alvo: str, id_lote: int = None, id_usuario: str
         timestamp_atual = str(datetime.now())
 
         metadados_completos = {
-            "id_nome_decreto": metadados_llm.get("id", f"DECRETO Nº {num_decreto}"),
+            "id_nome_decreto": f"DECRETO Nº {num_decreto}",
             "nup": metadados_llm.get("nup", []),
             "viproc": None,
             "pagina": str(pagina_doe),
@@ -1726,7 +1726,7 @@ def processar_diario_unico(url_alvo: str, numero_alvo: str, id_usuario: str = No
     timestamp_atual = str(datetime.now())
 
     metadados_completos = {
-        "id_nome_decreto": metadados_llm.get("id", f"DECRETO Nº {numero_alvo}"),
+        "id_nome_decreto": f"DECRETO Nº {numero_alvo}",
         "nup": metadados_llm.get("nup", []),
         "viproc": None,
         "pagina": str(pagina_doe),
