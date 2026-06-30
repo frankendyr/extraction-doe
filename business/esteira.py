@@ -449,7 +449,7 @@ def separar_decreto_dos_anexos(texto: str) -> tuple[str, str]:
     # --- 3. IDENTIFICAÇÃO DO ANEXO ---
     # Molde Regex: compila os padrões que indicam o início de anexos, quadros ou convênios.
     padrao_anexo = re.compile(
-        r"^\s*(ANEXO\s+I\b|ANEXO\s+[ÚU]NICO|ANEXO\s+D[AO]\s+DECRETO|ANEXO\s+A\b|ANEXO\s+DO\s+CR[ÉE]DITO|ANEXO\s+DA\s+LEI|QUADRO\s+RESUMO|QUADRO\s+DE\s+CARGOS|SISTEMA\s+OR[ÇC]AMENT[AÁ]RIO\s+E\s+FINANCEIRO|CONV[ÊE]NIO\s+ICMS\s+N[º°o.]?\s*\d+,\s*DE\s+\d{1,2}\s+DE\s+[A-ZÇç]+\s+DE\s+\d{4})",
+        r"^\s*(ANEXO\s+I\b|ANEXO\s+[ÚU]NICO|ANEXO\s+D[AO]\s+DECRETO|ANEXO\s+A\b|ANEXO\s+DO\s+CR[ÉE]DITO|ANEXO\s+DA\s+LEI|QUADRO\s+RESUMO|QUADRO\s+DE\s+CARGOS|SISTEMA\s+OR[ÇC]AMENT[AÁ]RIO\s+E\s+FINANCEIRO|CONV[ÊE]NIO\s+ICMS\s+N[º°o.]?\s*\d+,\s*DE\s+\d{1,2}\s+DE\s+[A-ZÇç]+\s+DE\s+\d{4}|AJUSTE\s+SINIEF)",
         re.MULTILINE | re.IGNORECASE
     )
 
