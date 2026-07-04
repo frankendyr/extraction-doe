@@ -117,16 +117,23 @@ def listar_decretos_doe(pdf_bytes: bytes, estado_inicial_executivo: bool = False
     dentro_do_poder_executivo = estado_inicial_executivo
     governadoria_fechou = False
     linha_anterior_valida = ""
+    pag_1_termina_com_asteriscos = False
+    ultima_linha_pag_1 = ""
 
     for num_pagina in range(len(doc)):
         pagina = doc.load_page(num_pagina)
         texto_pagina = pagina.get_text("text")
+
+        primeiro_decreto_da_pagina = True
 
         for linha in texto_pagina.splitlines():
             linha_limpa = linha.strip()
             
             if not linha_limpa:
                 continue
+                
+            if num_pagina == 0:
+                ultima_linha_pag_1 = linha_limpa
                 
             linha_upper = linha_limpa.upper()
 
@@ -141,13 +148,22 @@ def listar_decretos_doe(pdf_bytes: bytes, estado_inicial_executivo: bool = False
             if dentro_do_poder_executivo:
                 if molde_decreto.match(linha_limpa):
                     # Validação de Falso Positivo: Exige PODER EXECUTIVO, asteriscos ou cabeçalho
-                    if is_linha_anterior_valida(linha_anterior_valida):
+                    valido = is_linha_anterior_valida(linha_anterior_valida)
+                    
+                    if not valido and num_pagina == 1 and primeiro_decreto_da_pagina and pag_1_termina_com_asteriscos:
+                        valido = True
+                        
+                    if valido:
                         decretos_encontrados.append({
                             "decreto": " ".join(linha_limpa.split()),
                             "pagina": num_pagina + 1
                         })
+                        primeiro_decreto_da_pagina = False
             
             linha_anterior_valida = linha_limpa
+
+        if num_pagina == 0:
+            pag_1_termina_com_asteriscos = bool(re.match(r"^[\s\*]{3,}$", ultima_linha_pag_1))
 
     doc.close()
     return {
@@ -167,23 +183,44 @@ def contem_decreto_doe(pdf_bytes: bytes, numero_decreto: str) -> bool:
 
     padrao_regex = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}\s*,?\s*de\s+\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
     molde_decreto_especifico = re.compile(padrao_regex, re.IGNORECASE)
+    
+    padrao_qualquer_decreto = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+\s*,?\s*de\s+\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
+    molde_qualquer_decreto = re.compile(padrao_qualquer_decreto, re.IGNORECASE)
 
     linha_anterior_valida = ""
+    pag_1_termina_com_asteriscos = False
+    ultima_linha_pag_1 = ""
 
     for num_pagina in range(len(doc)):
         pagina = doc.load_page(num_pagina)
         texto_pagina = pagina.get_text("text")
+        
+        primeiro_decreto_da_pagina = True
 
         for linha in texto_pagina.splitlines():
             linha_limpa = linha.strip()
             if not linha_limpa: continue
             
-            if molde_decreto_especifico.match(linha_limpa):
-                if is_linha_anterior_valida(linha_anterior_valida):
-                    doc.close()
-                    return True
+            if num_pagina == 0:
+                ultima_linha_pag_1 = linha_limpa
+            
+            if molde_qualquer_decreto.match(linha_limpa):
+                if molde_decreto_especifico.match(linha_limpa):
+                    valido = is_linha_anterior_valida(linha_anterior_valida)
+                    
+                    if not valido and num_pagina == 1 and primeiro_decreto_da_pagina and pag_1_termina_com_asteriscos:
+                        valido = True
+                        
+                    if valido:
+                        doc.close()
+                        return True
+                        
+                primeiro_decreto_da_pagina = False
             
             linha_anterior_valida = linha_limpa
+            
+        if num_pagina == 0:
+            pag_1_termina_com_asteriscos = bool(re.match(r"^[\s\*]{3,}$", ultima_linha_pag_1))
 
     doc.close()
     return False
@@ -226,17 +263,25 @@ def extrair_texto_bruto_decreto(pdf_bytes, numero_decreto):
 
     padrao_inicio = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}\s*,?\s*de\s+\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
     molde_inicio = re.compile(padrao_inicio, re.IGNORECASE)
+    
+    padrao_qualquer_decreto = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+\s*,?\s*de\s+\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
+    molde_qualquer_decreto = re.compile(padrao_qualquer_decreto, re.IGNORECASE)
+    
     molde_fim_asteriscos = re.compile(r"^[\s\*]{3,}$")
 
     dentro_do_decreto = False
     texto_extraido = []
     imagens_encontradas = []
     linha_anterior_valida = ""
+    pag_1_termina_com_asteriscos = False
+    ultima_linha_pag_1 = ""
 
     for num_pagina in range(len(doc)):
         pagina = doc.load_page(num_pagina)
         lista_imagens = pagina.get_images(full=True)
         img_index = 0
+        
+        primeiro_decreto_da_pagina = True
 
         blocos = pagina.get_text("dict")["blocks"]
 
@@ -265,12 +310,22 @@ def extrair_texto_bruto_decreto(pdf_bytes, numero_decreto):
                     linha_limpa = linha_texto.strip()
                     if not linha_limpa:
                         continue
+                        
+                    if num_pagina == 0:
+                        ultima_linha_pag_1 = linha_limpa
 
                     if not dentro_do_decreto:
-                        if molde_inicio.match(linha_limpa):
-                            if is_linha_anterior_valida(linha_anterior_valida):
-                                dentro_do_decreto = True
-                                texto_extraido.append(linha_limpa)
+                        if molde_qualquer_decreto.match(linha_limpa):
+                            if molde_inicio.match(linha_limpa):
+                                valido = is_linha_anterior_valida(linha_anterior_valida)
+                                
+                                if not valido and num_pagina == 1 and primeiro_decreto_da_pagina and pag_1_termina_com_asteriscos:
+                                    valido = True
+                                    
+                                if valido:
+                                    dentro_do_decreto = True
+                                    texto_extraido.append(linha_limpa)
+                            primeiro_decreto_da_pagina = False
                     else:
                         # Lógica original devidamente restaurada!
                         if molde_fim_asteriscos.match(linha_limpa) or linha_limpa == "GOVERNADORIA":
@@ -283,6 +338,9 @@ def extrair_texto_bruto_decreto(pdf_bytes, numero_decreto):
 
             if not dentro_do_decreto and len(texto_extraido) > 0:
                 break
+                
+        if num_pagina == 0:
+            pag_1_termina_com_asteriscos = bool(re.match(r"^[\s\*]{3,}$", ultima_linha_pag_1))
 
         if not dentro_do_decreto and len(texto_extraido) > 0:
             break
