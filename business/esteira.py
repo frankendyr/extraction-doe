@@ -101,7 +101,7 @@ def is_linha_anterior_valida(linha: str) -> bool:
         linha_upper.isdigit()
     )
 
-def listar_decretos_doe(pdf_bytes: bytes) -> list:
+def listar_decretos_doe(pdf_bytes: bytes, estado_inicial_executivo: bool = False) -> dict:
     """
     Lê o PDF da memória e extrai os decretos publicados.
     Aplica regras rigorosas para evitar falsos positivos:
@@ -114,7 +114,7 @@ def listar_decretos_doe(pdf_bytes: bytes) -> list:
     padrao_regex = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+\s*,?\s*de\s+\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
     molde_decreto = re.compile(padrao_regex, re.IGNORECASE)
 
-    dentro_do_poder_executivo = False
+    dentro_do_poder_executivo = estado_inicial_executivo
     governadoria_fechou = False
     linha_anterior_valida = ""
 
@@ -152,7 +152,8 @@ def listar_decretos_doe(pdf_bytes: bytes) -> list:
     doc.close()
     return {
         "decretos": decretos_encontrados,
-        "governadoria_fechou": governadoria_fechou
+        "governadoria_fechou": governadoria_fechou,
+        "estado_final_executivo": dentro_do_poder_executivo
     }
 
 def contem_decreto_doe(pdf_bytes: bytes, numero_decreto: str) -> bool:

@@ -63,15 +63,17 @@ def orquestrar_varredura(data_inicio: str, data_fim: str):
         url_base = url[:-7] # Exemplo: http://imagens.seplag.ce.gov.br/PDF/20231228/do20231228
         caderno_atual = 1
         url_caderno = url
+        estado_poder_executivo = False
         
-        while True:
+        while caderno_atual <= 50:
             arquivo_pdf = baixar_doe(url_caderno)
             if not arquivo_pdf:
                 break
                 
-            resultado = listar_decretos_doe(arquivo_pdf)
+            resultado = listar_decretos_doe(arquivo_pdf, estado_inicial_executivo=estado_poder_executivo)
             lista_decretos = resultado["decretos"]
             governadoria_fechou = resultado["governadoria_fechou"]
+            estado_poder_executivo = resultado["estado_final_executivo"]
             
             if len(lista_decretos) > 0:
                 urls_premiadas.append(url_caderno)
