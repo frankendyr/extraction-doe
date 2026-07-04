@@ -111,7 +111,7 @@ def listar_decretos_doe(pdf_bytes: bytes, estado_inicial_executivo: bool = False
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     decretos_encontrados = []
 
-    padrao_regex = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+\s*,?\s*de\s+\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
+    padrao_regex = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+(?:\/\d{4})?\s*,?\s*de\s+\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
     molde_decreto = re.compile(padrao_regex, re.IGNORECASE)
 
     dentro_do_poder_executivo = estado_inicial_executivo
@@ -181,10 +181,10 @@ def contem_decreto_doe(pdf_bytes: bytes, numero_decreto: str) -> bool:
     numero_limpo = str(numero_decreto).replace(".", "")
     regex_numero = r"\.?".join(list(numero_limpo))
 
-    padrao_regex = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}\s*,?\s*de\s+\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
+    padrao_regex = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}(?:\/\d{{4}})?\s*,?\s*de\s+\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
     molde_decreto_especifico = re.compile(padrao_regex, re.IGNORECASE)
     
-    padrao_qualquer_decreto = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+\s*,?\s*de\s+\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
+    padrao_qualquer_decreto = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+(?:\/\d{4})?\s*,?\s*de\s+\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
     molde_qualquer_decreto = re.compile(padrao_qualquer_decreto, re.IGNORECASE)
 
     linha_anterior_valida = ""
@@ -234,7 +234,7 @@ def verificar_decreto_primeira_pagina(pdf_bytes: bytes, numero_decreto: str) -> 
     numero_limpo = str(numero_decreto).replace(".", "")
     regex_numero = r"\.?".join(list(numero_limpo))
 
-    padrao_regex = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}\s*,?\s*de\s+\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
+    padrao_regex = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}(?:\/\d{{4}})?\s*,?\s*de\s+\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
     molde_decreto = re.compile(padrao_regex, re.IGNORECASE)
 
     # Verifica apenas a primeira página (índice 0) para máxima performance
@@ -261,10 +261,10 @@ def extrair_texto_bruto_decreto(pdf_bytes, numero_decreto):
     numero_limpo = str(numero_decreto).replace(".", "")
     regex_numero = r"\.?".join(list(numero_limpo))
 
-    padrao_inicio = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}\s*,?\s*de\s+\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
+    padrao_inicio = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}(?:\/\d{{4}})?\s*,?\s*de\s+\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
     molde_inicio = re.compile(padrao_inicio, re.IGNORECASE)
     
-    padrao_qualquer_decreto = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+\s*,?\s*de\s+\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
+    padrao_qualquer_decreto = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+(?:\/\d{4})?\s*,?\s*de\s+\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
     molde_qualquer_decreto = re.compile(padrao_qualquer_decreto, re.IGNORECASE)
     
     molde_fim_asteriscos = re.compile(r"^[\s\*]{3,}$")
