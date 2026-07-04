@@ -85,7 +85,7 @@ def listar_decretos_publicacao(req: ListarDecretosRequest):
     if not arquivo_doe:
         raise HTTPException(status_code=400, detail={"sucesso": False, "mensagem": "Falha ao baixar o PDF da URL fornecida."})
         
-    decretos = listar_decretos_doe(arquivo_doe)
+    decretos = listar_decretos_doe(arquivo_doe)["decretos"]
     
     return {
         "sucesso": True,

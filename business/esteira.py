@@ -92,6 +92,7 @@ def is_linha_anterior_valida(linha: str) -> bool:
     linha_upper = linha.upper()
     return (
         linha_upper == "PODER EXECUTIVO" or 
+        linha_upper == "PODER EXECUTIVO (CONTINUAÇÃO)" or
         bool(re.match(r"^[\s\*]{3,}$", linha)) or
         "DIÁRIO OFICIAL" in linha_upper or
         "SÉRIE" in linha_upper or
@@ -114,6 +115,7 @@ def listar_decretos_doe(pdf_bytes: bytes) -> list:
     molde_decreto = re.compile(padrao_regex, re.IGNORECASE)
 
     dentro_do_poder_executivo = False
+    governadoria_fechou = False
     linha_anterior_valida = ""
 
     for num_pagina in range(len(doc)):
@@ -129,11 +131,12 @@ def listar_decretos_doe(pdf_bytes: bytes) -> list:
             linha_upper = linha_limpa.upper()
 
             # Controle da Seção Principal
-            if linha_upper == "PODER EXECUTIVO":
+            if linha_upper == "PODER EXECUTIVO" or linha_upper == "PODER EXECUTIVO (CONTINUAÇÃO)":
                 dentro_do_poder_executivo = True
             elif linha_upper == "GOVERNADORIA" and dentro_do_poder_executivo:
                 # O Diário Oficial tradicionalmente separa a Governadoria
                 dentro_do_poder_executivo = False
+                governadoria_fechou = True
             
             if dentro_do_poder_executivo:
                 if molde_decreto.match(linha_limpa):
@@ -147,7 +150,10 @@ def listar_decretos_doe(pdf_bytes: bytes) -> list:
             linha_anterior_valida = linha_limpa
 
     doc.close()
-    return decretos_encontrados
+    return {
+        "decretos": decretos_encontrados,
+        "governadoria_fechou": governadoria_fechou
+    }
 
 def contem_decreto_doe(pdf_bytes: bytes, numero_decreto: str) -> bool:
     """
@@ -1202,7 +1208,7 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str, id_usuario: 
         data_id_doc = f"{data_bruta[6:]}{data_bruta[4:6]}{data_bruta[:4]}"
 
     logger.info("Procurando a página exata do decreto...")
-    lista_decretos = listar_decretos_doe(arquivo_doe)
+    lista_decretos = listar_decretos_doe(arquivo_doe)["decretos"]
     pagina_doe = None
     numero_limpo_alvo = str(numero_alvo).replace(".", "")
 
@@ -1299,7 +1305,7 @@ def extrair_metadados_com_llm(texto_decreto: str, nome_modelo: str, id_usuario: 
         data_id_doc = f"{data_bruta[6:]}{data_bruta[4:6]}{data_bruta[:4]}"
 
     logger.info("Lendo o PDF e listando decretos publicados...")
-    lista_decretos = listar_decretos_doe(arquivo_doe)
+    lista_decretos = listar_decretos_doe(arquivo_doe)["decretos"]
     total_decretos = len(lista_decretos)
 
     if total_decretos == 0:
@@ -1421,7 +1427,7 @@ def processar_diario_em_lote(url_alvo: str, id_lote: int = None, id_usuario: str
 
     yield json.dumps({"status": "log", "mensagem": "Lendo o PDF e listando decretos publicados..."}) + "\n"
     logger.info("Lendo o PDF e listando decretos publicados...")
-    lista_decretos = listar_decretos_doe(arquivo_doe)
+    lista_decretos = listar_decretos_doe(arquivo_doe)["decretos"]
     total_decretos = len(lista_decretos)
 
     if total_decretos == 0:
@@ -1645,7 +1651,7 @@ def processar_diario_unico(url_alvo: str, numero_alvo: str, id_usuario: str = No
 
     yield json.dumps({"status": "log", "mensagem": "Procurando a página exata do decreto..."}) + "\n"
     logger.info("Procurando a página exata do decreto...")
-    lista_decretos = listar_decretos_doe(arquivo_doe)
+    lista_decretos = listar_decretos_doe(arquivo_doe)["decretos"]
     pagina_doe = None
     numero_limpo_alvo = str(numero_alvo).replace(".", "")
 

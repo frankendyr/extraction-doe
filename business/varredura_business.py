@@ -60,15 +60,32 @@ def orquestrar_varredura(data_inicio: str, data_fim: str):
     
     urls_premiadas = []
     for i, url in enumerate(urls_validas, 1):
-        arquivo_pdf = baixar_doe(url)
-        if not arquivo_pdf:
-            continue
-        lista_decretos = listar_decretos_doe(arquivo_pdf)
-        if len(lista_decretos) > 0:
-            urls_premiadas.append(url)
-            logger.info(f"APROVADO: {url} ({len(lista_decretos)} decretos)")
-        else:
-            logger.warning(f"DESCARTADO: {url} (0 decretos)")
+        url_base = url[:-7] # Exemplo: http://imagens.seplag.ce.gov.br/PDF/20231228/do20231228
+        caderno_atual = 1
+        url_caderno = url
+        
+        while True:
+            arquivo_pdf = baixar_doe(url_caderno)
+            if not arquivo_pdf:
+                break
+                
+            resultado = listar_decretos_doe(arquivo_pdf)
+            lista_decretos = resultado["decretos"]
+            governadoria_fechou = resultado["governadoria_fechou"]
+            
+            if len(lista_decretos) > 0:
+                urls_premiadas.append(url_caderno)
+                logger.info(f"APROVADO: {url_caderno} ({len(lista_decretos)} decretos)")
+            else:
+                logger.warning(f"DESCARTADO: {url_caderno} (0 decretos)")
+                
+            if governadoria_fechou:
+                break
+                
+            # Se não fechou a governadoria, tenta o próximo caderno
+            caderno_atual += 1
+            num_formatado = f"{caderno_atual:02d}"
+            url_caderno = f"{url_base}p{num_formatado}.pdf"
             
     logger.info(f"Varredura concluída! {len(urls_premiadas)} links possuem decretos.")
     return {"sucesso": True, "total_encontrado": len(urls_premiadas), "urls": urls_premiadas}
