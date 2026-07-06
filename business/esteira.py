@@ -73,20 +73,34 @@ handler.setFormatter(logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)
 if not logger.handlers:
     logger.addHandler(handler)
 
-def baixar_doe(url):
+def baixar_doe(url: str, max_tentativas: int = 3) -> bytes:
     """
-    Faz o download do Diário Oficial a partir de uma URL e o mantém na memória RAM.
-    Retorna os dados binários (bytes) do PDF em caso de sucesso, ou None se houver falha.
+    Realiza o download de um PDF do Diário Oficial.
+    Possui sistema de tentativas (retry) para lidar com instabilidades do servidor,
+    mas aborta imediatamente em caso de erro 404 (página não encontrada).
     """
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        resposta = requests.get(url, verify=False, timeout=30, headers=headers)
-        resposta.raise_for_status()
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    
+    for tentativa in range(max_tentativas):
+        try:
+            resposta = requests.get(url, verify=False, timeout=30, headers=headers)
+            
+            # Se for 404, não adianta tentar de novo, o caderno realmente não existe
+            if resposta.status_code == 404:
+                return None
+                
+            resposta.raise_for_status()
+            return resposta.content
 
-        return resposta.content
+        except requests.exceptions.RequestException as e:
+            # Se for a última tentativa, desiste
+            if tentativa == max_tentativas - 1:
+                return None
+            # Se não for, espera 2 segundos e tenta novamente
+            time.sleep(2)
+            
+    return None
 
-    except requests.exceptions.RequestException:
-        return None
 def is_linha_anterior_valida(linha: str) -> bool:
     if not linha: return False
     linha_upper = linha.upper()
