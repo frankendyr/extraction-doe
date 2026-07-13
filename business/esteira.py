@@ -1869,8 +1869,9 @@ def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str, i
         logger.info("Iniciando gravação no PostgreSQL (Desenvolvimento)...")
 
         try:
-            salvar_no_banco(resultado_final)
-            salvar_anexos_no_banco(resultado_final)
+            id_lote = criar_lote_decretos(url_do_diario, id_usuario or "sistema")
+            salvar_no_banco(resultado_final, id_lote)
+            salvar_anexos_no_banco(resultado_final, id_lote)
             
             yield json.dumps({"status": "log", "mensagem": "Dados salvos com sucesso no banco de dados!"}) + "\n"
             logger.info("Dados salvos com sucesso no banco de dados!")

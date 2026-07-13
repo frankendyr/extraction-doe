@@ -206,7 +206,9 @@ def buscar_decreto_no_banco(numero_decreto: str) -> dict:
         # Utiliza a conexão desacoplada
         # conn = obter_conexao_banco()
         # cursor = conn.cursor(cursor_factory=RealDictCursor)
-        conn, cursor = conectar_db()
+        from psycopg2.extras import RealDictCursor
+        conn, _ = conectar_db()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
 
         query = """
             SELECT

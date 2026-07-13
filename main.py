@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from business.esteira import executar_esteira_decreto_unico, executar_esteira_publicacao_doe, baixar_doe, listar_decretos_doe, executar_multiplos_lotes_doe
 from business.varredura_business import orquestrar_varredura, montar_url_por_data
+from doe.esteira_doe import buscar_decreto_no_banco
 
 app = FastAPI(
     title="API_EXTRACTION_SERVICE",
