@@ -1849,6 +1849,13 @@ def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str, i
     logger.info(f"🔗 URL: {url_do_diario}")
     logger.info("================================================================")
 
+    try:
+        id_lote = criar_lote_decretos(url_do_diario, id_usuario or "sistema")
+        yield json.dumps({"status": "log", "mensagem": f"Lote de importação registrado (ID: {id_lote})"}) + "\n"
+    except Exception as e:
+        yield json.dumps({"status": "error", "mensagem": f"Falha ao registrar lote: {e}"}) + "\n"
+        return
+
     resultado_final = None
 
     for evento in processar_diario_unico(url_do_diario, numero_do_decreto, id_usuario):
@@ -1869,12 +1876,12 @@ def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str, i
         logger.info("Iniciando gravação no PostgreSQL (Desenvolvimento)...")
 
         try:
-            id_lote = criar_lote_decretos(url_do_diario, id_usuario or "sistema")
-            salvar_no_banco(resultado_final, id_lote)
+            total_inseridos = salvar_no_banco(resultado_final, id_lote)
             salvar_anexos_no_banco(resultado_final, id_lote)
-            
-            yield json.dumps({"status": "log", "mensagem": "Dados salvos com sucesso no banco de dados!"}) + "\n"
-            logger.info("Dados salvos com sucesso no banco de dados!")
+            atualizar_total_decretos_lote(id_lote, total_inseridos)
+
+            yield json.dumps({"status": "log", "mensagem": f"Todos os dados ({total_inseridos} inseridos novos) e anexos gravados no banco com sucesso!"}) + "\n"
+            logger.info("Todos os dados e anexos foram gravados no banco com sucesso!")
             
             yield json.dumps({"status": "done", "resultado": resultado_final}) + "\n"
 
@@ -1883,6 +1890,8 @@ def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str, i
             yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
             logger.error(msg_erro)
     else:
+        if id_lote:
+            marcar_lote_vazio_processado(id_lote)
         msg_erro = f"A esteira falhou: {resultado_final.get('mensagem') if resultado_final else 'Erro desconhecido'}"
         yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
         logger.error(msg_erro)

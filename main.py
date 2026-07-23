@@ -36,6 +36,11 @@ class VarreduraRequest(BaseModel):
 class LotePeriodoRequest(BaseModel):
     urls: list[str]
     id_usuario: str
+
+class DecretoUnicoRequest(BaseModel):
+    url_do_diario: str
+    numero_decreto: str
+    id_usuario: str
 @app.post("/listar-urls-decretos-por-periodo", summary="Varredura de URLs de Diários Oficiais que possuem publicações de decretos")
 def varredura_urls(req: VarreduraRequest):
     """
@@ -65,6 +70,16 @@ def executar_diario_lote(req: DiarioLoteRequest):
     Retorna os logs em tempo real via Server-Sent Events (StreamingResponse).
     """
     gerador = executar_esteira_publicacao_doe(req.url_do_diario, req.id_usuario)
+    return StreamingResponse(gerador, media_type="text/event-stream")
+
+@app.post("/extrair-decreto-unico-doe", summary="Executar esteira de extração de um decreto único de uma publicação do DOE com logs em tempo real (SSE)")
+def extrair_decreto_unico(req: DecretoUnicoRequest):
+    """
+    Orquestra o processamento e gravação de um único decreto específico de um Diário Oficial.
+    Registra lote no banco de dados, envia imagens ao MinIO, chama a LLM com logs de token e salva os dados no banco.
+    Retorna os logs em tempo real via Server-Sent Events (StreamingResponse).
+    """
+    gerador = executar_esteira_decreto_unico(req.url_do_diario, req.numero_decreto, req.id_usuario)
     return StreamingResponse(gerador, media_type="text/event-stream")
 
 @app.post("/extrair-decretos-lote-por-periodo", summary="Executar esteira de extração de múltiplos diários a partir de uma lista de URLs com logs em tempo real (SSE)")
