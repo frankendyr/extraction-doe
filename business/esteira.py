@@ -1700,7 +1700,7 @@ def executar_esteira_publicacao_doe(url_do_diario: str, id_usuario: str):
         yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
         logger.error(msg_erro)
 
-def processar_diario_unico(url_alvo: str, numero_alvo: str, id_usuario: str = None):
+def processar_diario_unico(url_alvo: str, numero_alvo: str, id_usuario: str = None, id_lote: int = None):
     yield json.dumps({"status": "log", "mensagem": f"Iniciando processamento do Decreto {numero_alvo}"}) + "\n"
     logger.info(f"Iniciando processamento do Decreto {numero_alvo}")
     
@@ -1817,7 +1817,7 @@ def processar_diario_unico(url_alvo: str, numero_alvo: str, id_usuario: str = No
         "responsaveis": metadados_llm.get("responsaveis", []),
         "data_diario": data_diario_formatada,
         "url": url_direta,
-        "arquivo_origem": url_alvo,
+        "arquivo_origem": str(id_lote) if id_lote else url_alvo,
         "id_tipo": 1,
         "id_documento": id_documento_gerado,
         "processado": False,
@@ -1858,7 +1858,7 @@ def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str, i
 
     resultado_final = None
 
-    for evento in processar_diario_unico(url_do_diario, numero_do_decreto, id_usuario):
+    for evento in processar_diario_unico(url_do_diario, numero_do_decreto, id_usuario, id_lote=id_lote):
         try:
             evento_dict = json.loads(evento.strip())
             if evento_dict.get("status") == "done":
