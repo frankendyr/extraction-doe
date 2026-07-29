@@ -1842,11 +1842,19 @@ def processar_diario_unico(url_alvo: str, numero_alvo: str, id_usuario: str = No
         "dados": [pacote_do_decreto]
     }}) + "\n"
 
-def executar_esteira_decreto_unico(url_do_diario: str, numero_do_decreto: str, id_usuario: str = None):
+def executar_esteira_decreto_unico(data_do_diario: str, numero_do_decreto: str, id_usuario: str = None):
+    from business.varredura_business import montar_url_por_data
+
+    res_url = montar_url_por_data(data_do_diario)
+    if not res_url.get("sucesso"):
+        yield json.dumps({"status": "error", "mensagem": res_url.get("mensagem")}) + "\n"
+        return
+    url_do_diario = res_url["url"]
+
     yield json.dumps({"status": "log", "mensagem": f"INICIANDO ESTEIRA PARA O DECRETO: {numero_do_decreto}"}) + "\n"
     logger.info("================================================================")
     logger.info(f"INICIANDO ESTEIRA PARA O DECRETO: {numero_do_decreto}")
-    logger.info(f"🔗 URL: {url_do_diario}")
+    logger.info(f"🔗 URL MONTADA ({data_do_diario}): {url_do_diario}")
     logger.info("================================================================")
 
     try:
