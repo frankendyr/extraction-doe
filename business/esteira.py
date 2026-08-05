@@ -1843,25 +1843,50 @@ def processar_diario_unico(url_alvo: str, numero_alvo: str, id_usuario: str = No
     }}) + "\n"
 
 def executar_esteira_decreto_unico(data_do_diario: str, numero_do_decreto: str, id_usuario: str = None):
-    from business.varredura_business import montar_url_por_data
+    from business.varredura_business import orquestrar_varredura
 
-    res_url = montar_url_por_data(data_do_diario)
-    if not res_url.get("sucesso"):
-        yield json.dumps({"status": "error", "mensagem": res_url.get("mensagem")}) + "\n"
+    yield json.dumps({"status": "log", "mensagem": f"INICIANDO ESTEIRA PARA O DECRETO Nº {numero_do_decreto} NA DATA: {data_do_diario}"}, ensure_ascii=False) + "\n"
+    logger.info("================================================================")
+    logger.info(f"INICIANDO ESTEIRA PARA O DECRETO Nº {numero_do_decreto} NA DATA: {data_do_diario}")
+    logger.info("================================================================")
+
+    yield json.dumps({"status": "log", "mensagem": f"Buscando cadernos do Diário Oficial publicados no dia {data_do_diario}..."}, ensure_ascii=False) + "\n"
+    logger.info(f"Buscando cadernos do Diário Oficial publicados no dia {data_do_diario}...")
+
+    res_varredura = orquestrar_varredura(data_do_diario, data_do_diario)
+    if not res_varredura.get("sucesso") or not res_varredura.get("urls"):
+        msg = f"Nenhum Diário Oficial com decretos foi localizado para a data {data_do_diario}."
+        logger.warning(msg)
+        yield json.dumps({"status": "error", "mensagem": msg}, ensure_ascii=False) + "\n"
         return
-    url_do_diario = res_url["url"]
 
-    yield json.dumps({"status": "log", "mensagem": f"INICIANDO ESTEIRA PARA O DECRETO: {numero_do_decreto}"}) + "\n"
-    logger.info("================================================================")
-    logger.info(f"INICIANDO ESTEIRA PARA O DECRETO: {numero_do_decreto}")
-    logger.info(f"🔗 URL MONTADA ({data_do_diario}): {url_do_diario}")
-    logger.info("================================================================")
+    urls_candidatas = res_varredura.get("urls", [])
+    yield json.dumps({"status": "log", "mensagem": f"Localizado(s) {len(urls_candidatas)} caderno(s) com decretos em {data_do_diario}. Verificando qual contém o Decreto Nº {numero_do_decreto}..."}, ensure_ascii=False) + "\n"
+    logger.info(f"Localizado(s) {len(urls_candidatas)} caderno(s) em {data_do_diario}. Verificando qual contém o Decreto Nº {numero_do_decreto}...")
+
+    url_do_diario = None
+    for url_caderno in urls_candidatas:
+        arquivo_pdf = baixar_doe(url_caderno)
+        if not arquivo_pdf:
+            continue
+        if contem_decreto_doe(arquivo_pdf, numero_do_decreto):
+            url_do_diario = url_caderno
+            break
+
+    if not url_do_diario:
+        msg = f"Decreto Nº {numero_do_decreto} não foi encontrado em nenhum dos cadernos do Diário Oficial de {data_do_diario}."
+        logger.warning(msg)
+        yield json.dumps({"status": "error", "mensagem": msg}, ensure_ascii=False) + "\n"
+        return
+
+    yield json.dumps({"status": "log", "mensagem": f"Decreto Nº {numero_do_decreto} localizado no caderno: {url_do_diario}"}, ensure_ascii=False) + "\n"
+    logger.info(f"Decreto Nº {numero_do_decreto} localizado no caderno: {url_do_diario}")
 
     try:
         id_lote = criar_lote_decretos(url_do_diario, id_usuario or "sistema")
-        yield json.dumps({"status": "log", "mensagem": f"Lote de importação registrado (ID: {id_lote})"}) + "\n"
+        yield json.dumps({"status": "log", "mensagem": f"Lote de importação registrado (ID: {id_lote})"}, ensure_ascii=False) + "\n"
     except Exception as e:
-        yield json.dumps({"status": "error", "mensagem": f"Falha ao registrar lote: {e}"}) + "\n"
+        yield json.dumps({"status": "error", "mensagem": f"Falha ao registrar lote: {e}"}, ensure_ascii=False) + "\n"
         return
 
     resultado_final = None
@@ -1877,10 +1902,10 @@ def executar_esteira_decreto_unico(data_do_diario: str, numero_do_decreto: str, 
             yield evento
 
     if resultado_final and resultado_final.get("sucesso"):
-        yield json.dumps({"status": "log", "mensagem": "Extração concluída com sucesso!"}) + "\n"
+        yield json.dumps({"status": "log", "mensagem": "Extração concluída com sucesso!"}, ensure_ascii=False) + "\n"
         logger.info("Extração concluída com sucesso!")
 
-        yield json.dumps({"status": "log", "mensagem": "Iniciando gravação no PostgreSQL..."}) + "\n"
+        yield json.dumps({"status": "log", "mensagem": "Iniciando gravação no PostgreSQL..."}, ensure_ascii=False) + "\n"
         logger.info("Iniciando gravação no PostgreSQL (Desenvolvimento)...")
 
         try:
@@ -1888,20 +1913,20 @@ def executar_esteira_decreto_unico(data_do_diario: str, numero_do_decreto: str, 
             salvar_anexos_no_banco(resultado_final, id_lote)
             atualizar_total_decretos_lote(id_lote, total_inseridos)
 
-            yield json.dumps({"status": "log", "mensagem": f"Todos os dados ({total_inseridos} inseridos novos) e anexos gravados no banco com sucesso!"}) + "\n"
+            yield json.dumps({"status": "log", "mensagem": f"Todos os dados ({total_inseridos} inseridos novos) e anexos gravados no banco com sucesso!"}, ensure_ascii=False) + "\n"
             logger.info("Todos os dados e anexos foram gravados no banco com sucesso!")
             
-            yield json.dumps({"status": "done", "resultado": resultado_final}) + "\n"
+            yield json.dumps({"status": "done", "resultado": resultado_final}, ensure_ascii=False) + "\n"
 
         except Exception as e:
             msg_erro = f"Decreto extraído, mas falhou ao salvar no banco: {e}"
-            yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
+            yield json.dumps({"status": "error", "mensagem": msg_erro}, ensure_ascii=False) + "\n"
             logger.error(msg_erro)
     else:
         if id_lote:
             marcar_lote_vazio_processado(id_lote)
         msg_erro = f"A esteira falhou: {resultado_final.get('mensagem') if resultado_final else 'Erro desconhecido'}"
-        yield json.dumps({"status": "error", "mensagem": msg_erro}) + "\n"
+        yield json.dumps({"status": "error", "mensagem": msg_erro}, ensure_ascii=False) + "\n"
         logger.error(msg_erro)
 
 
