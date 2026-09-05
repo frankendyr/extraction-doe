@@ -79,7 +79,12 @@ def baixar_doe(url: str, max_tentativas: int = 3) -> bytes:
     Possui sistema de tentativas (retry) para lidar com instabilidades do servidor,
     mas aborta imediatamente em caso de erro 404 (página não encontrada).
     """
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    if not url:
+        return None
+    url = url.strip(" '\"\t\r\n")
+    if url.startswith("http://"):
+        url = url.replace("http://", "https://", 1)
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'}
     
     for tentativa in range(max_tentativas):
         try:
@@ -87,16 +92,16 @@ def baixar_doe(url: str, max_tentativas: int = 3) -> bytes:
             
             # Se for 404, não adianta tentar de novo, o caderno realmente não existe
             if resposta.status_code == 404:
+                logger.warning(f"Download 404 para URL: {url}")
                 return None
                 
             resposta.raise_for_status()
             return resposta.content
 
         except requests.exceptions.RequestException as e:
-            # Se for a última tentativa, desiste
+            logger.error(f"Erro ao baixar PDF (Tentativa {tentativa+1}/{max_tentativas}) da URL '{url}': {e}")
             if tentativa == max_tentativas - 1:
                 return None
-            # Se não for, espera 2 segundos e tenta novamente
             time.sleep(2)
             
     return None
@@ -125,7 +130,7 @@ def listar_decretos_doe(pdf_bytes: bytes, estado_inicial_executivo: bool = False
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     decretos_encontrados = []
 
-    padrao_regex = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+(?:\/\d{4})?\s*,?\s*de\s+\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
+    padrao_regex = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+(?:\/\d{4})?\s*,?\s*(?:[a-zA-ZçÇÃãÕõÉéÊêÍíÓóÚú\s]+,)?\s*(?:de\s+)?\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
     molde_decreto = re.compile(padrao_regex, re.IGNORECASE)
 
     dentro_do_poder_executivo = estado_inicial_executivo
@@ -195,10 +200,10 @@ def contem_decreto_doe(pdf_bytes: bytes, numero_decreto: str) -> bool:
     numero_limpo = str(numero_decreto).replace(".", "")
     regex_numero = r"\.?".join(list(numero_limpo))
 
-    padrao_regex = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}(?:\/\d{{4}})?\s*,?\s*de\s+\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
+    padrao_regex = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}(?:\/\d{{4}})?\s*,?\s*(?:[a-zA-ZçÇÃãÕõÉéÊêÍíÓóÚú\s]+,)?\s*(?:de\s+)?\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
     molde_decreto_especifico = re.compile(padrao_regex, re.IGNORECASE)
     
-    padrao_qualquer_decreto = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+(?:\/\d{4})?\s*,?\s*de\s+\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
+    padrao_qualquer_decreto = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+(?:\/\d{4})?\s*,?\s*(?:[a-zA-ZçÇÃãÕõÉéÊêÍíÓóÚú\s]+,)?\s*(?:de\s+)?\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
     molde_qualquer_decreto = re.compile(padrao_qualquer_decreto, re.IGNORECASE)
 
     linha_anterior_valida = ""
@@ -248,7 +253,7 @@ def verificar_decreto_primeira_pagina(pdf_bytes: bytes, numero_decreto: str) -> 
     numero_limpo = str(numero_decreto).replace(".", "")
     regex_numero = r"\.?".join(list(numero_limpo))
 
-    padrao_regex = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}(?:\/\d{{4}})?\s*,?\s*de\s+\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
+    padrao_regex = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}(?:\/\d{{4}})?\s*,?\s*(?:[a-zA-ZçÇÃãÕõÉéÊêÍíÓóÚú\s]+,)?\s*(?:de\s+)?\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
     molde_decreto = re.compile(padrao_regex, re.IGNORECASE)
 
     # Verifica apenas a primeira página (índice 0) para máxima performance
@@ -275,10 +280,10 @@ def extrair_texto_bruto_decreto(pdf_bytes, numero_decreto):
     numero_limpo = str(numero_decreto).replace(".", "")
     regex_numero = r"\.?".join(list(numero_limpo))
 
-    padrao_inicio = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}(?:\/\d{{4}})?\s*,?\s*de\s+\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
+    padrao_inicio = rf"^\s*DECRETO\s*N[°ºoO\.]*\s*{regex_numero}(?:\/\d{{4}})?\s*,?\s*(?:[a-zA-ZçÇÃãÕõÉéÊêÍíÓóÚú\s]+,)?\s*(?:de\s+)?\d{{1,2}}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{{4}}\.?\s*$"
     molde_inicio = re.compile(padrao_inicio, re.IGNORECASE)
     
-    padrao_qualquer_decreto = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+(?:\/\d{4})?\s*,?\s*de\s+\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
+    padrao_qualquer_decreto = r"^\s*DECRETO\s*N[°ºoO\.]*\s*[\d\.]+(?:\/\d{4})?\s*,?\s*(?:[a-zA-ZçÇÃãÕõÉéÊêÍíÓóÚú\s]+,)?\s*(?:de\s+)?\d{1,2}\s*,?\s*de\s+[a-zA-ZçÇ]+(?:\s+de)?\s+\d{4}\.?\s*$"
     molde_qualquer_decreto = re.compile(padrao_qualquer_decreto, re.IGNORECASE)
     
     molde_fim_asteriscos = re.compile(r"^[\s\*]{3,}$")
@@ -1800,6 +1805,11 @@ def processar_diario_unico(url_alvo: str, numero_alvo: str, id_usuario: str = No
         id_usuario=id_usuario,
         id_documento=id_documento_gerado
     )
+
+    if isinstance(metadados_llm, list):
+        metadados_llm = metadados_llm[0] if (metadados_llm and isinstance(metadados_llm[0], dict)) else {}
+    if not isinstance(metadados_llm, dict):
+        metadados_llm = {}
 
     url_direta = f"{url_alvo}#page={pagina_doe}"
     timestamp_atual = str(datetime.now())

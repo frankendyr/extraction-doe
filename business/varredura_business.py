@@ -25,7 +25,7 @@ def gerar_urls_por_periodo(data_inicio: str, data_fim: str) -> list:
         for i in range(delta_dias + 1):
             data_atual = data_inicial_dt + timedelta(days=i)
             data_formatada_url = data_atual.strftime("%Y%m%d")
-            url = f"http://imagens.seplag.ce.gov.br/PDF/{data_formatada_url}/do{data_formatada_url}p01.pdf"
+            url = f"https://imagens.seplag.ce.gov.br/PDF/{data_formatada_url}/do{data_formatada_url}p01.pdf"
             urls_geradas.append(url)
 
         return urls_geradas
@@ -43,16 +43,17 @@ def orquestrar_varredura(data_inicio: str, data_fim: str):
     logger.info(f"Fase 2: Testando a existência de {len(urls_brutas)} URLs geradas...")
     
     urls_validas = []
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'}
     sessao = requests.Session()
     for url in urls_brutas:
+        url_teste = url.replace("http://", "https://", 1) if url.startswith("http://") else url
         try:
-            resposta = sessao.get(url, verify=False, timeout=10, headers=headers, stream=True, allow_redirects=False)
-            if resposta.status_code == 200 and 'application/pdf' in resposta.headers.get('Content-Type', ''):
-                urls_validas.append(url)
+            resposta = sessao.get(url_teste, verify=False, timeout=15, headers=headers, stream=True)
+            if resposta.status_code == 200 and ('application/pdf' in resposta.headers.get('Content-Type', '') or url_teste.endswith('.pdf')):
+                urls_validas.append(url_teste)
             resposta.close()
-        except requests.exceptions.RequestException:
-            pass
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Aviso ao verificar a URL '{url_teste}': {e}")
     sessao.close()
     
     logger.info(f"Encontrados {len(urls_validas)} PDFs reais no servidor.")
