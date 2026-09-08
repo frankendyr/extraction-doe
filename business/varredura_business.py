@@ -4,9 +4,15 @@ import urllib3
 import json
 from datetime import datetime, timedelta
 
+import socket
+import urllib3.util.connection as urllib3_conn
+import time
+
 from .esteira import baixar_doe, listar_decretos_doe
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# Força o urllib3 a utilizar apenas resoluções de endereço IPv4 (evita erro Errno 101 Network is unreachable em servidores sem IPv6)
+urllib3_conn.allowed_gai_family = lambda: socket.AF_INET
 logger = logging.getLogger("ExtratorDOE")
 
 def gerar_urls_por_periodo(data_inicio: str, data_fim: str) -> list:
@@ -47,13 +53,19 @@ def orquestrar_varredura(data_inicio: str, data_fim: str):
     sessao = requests.Session()
     for url in urls_brutas:
         url_teste = url.replace("http://", "https://", 1) if url.startswith("http://") else url
-        try:
-            resposta = sessao.get(url_teste, verify=False, timeout=15, headers=headers, stream=True)
-            if resposta.status_code == 200 and ('application/pdf' in resposta.headers.get('Content-Type', '') or url_teste.endswith('.pdf')):
-                urls_validas.append(url_teste)
-            resposta.close()
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Aviso ao verificar a URL '{url_teste}': {e}")
+        for tentativa in range(3):
+            try:
+                resposta = sessao.get(url_teste, verify=False, timeout=15, headers=headers, stream=True)
+                if resposta.status_code == 200 and ('application/pdf' in resposta.headers.get('Content-Type', '') or url_teste.endswith('.pdf')):
+                    urls_validas.append(url_teste)
+                    resposta.close()
+                    break
+                resposta.close()
+            except requests.exceptions.RequestException as e:
+                if tentativa == 2:
+                    logger.warning(f"Aviso ao verificar a URL '{url_teste}' (Tentativa 3/3): {e}")
+                else:
+                    time.sleep(1)
     sessao.close()
     
     logger.info(f"Encontrados {len(urls_validas)} PDFs reais no servidor.")

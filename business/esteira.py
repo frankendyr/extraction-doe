@@ -12,7 +12,12 @@ from doe.esteira_doe import salvar_no_banco, salvar_anexos_no_banco, criar_lote_
 import google.generativeai as genai
 import logging
 
+import socket
+import urllib3.util.connection as urllib3_conn
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# Força o urllib3 a utilizar apenas resoluções de endereço IPv4 (evita erro Errno 101 Network is unreachable em servidores sem IPv6)
+urllib3_conn.allowed_gai_family = lambda: socket.AF_INET
 
 # Configuração de Logs LLM
 URL_LOGS = os.getenv("URL_LOGS", "http://18.206.213.53:8005/logs_processamento")
